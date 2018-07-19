@@ -58,7 +58,8 @@ export error_dim_negative, ErrorConstrDimMismatch
 
 export iswindows64
 
-export CyclotomicField, MaximalRealSubfield, NumberField, ComplexField, PadicField
+export CyclotomicField, MaximalRealSubfield, NumberField, ComplexField, PadicField,
+       QadicField
 
 # Things/constants which are also defined in AbstractAlgebra:
 export ZZ, QQ, RealField, FiniteField, NumberField
@@ -332,6 +333,7 @@ include("Rings.jl")
 ZZ = FlintZZ
 QQ = FlintQQ
 PadicField = FlintPadicField
+QadicField = FlintQadicField
 FiniteField = FlintFiniteField
 
 ###############################################################################
