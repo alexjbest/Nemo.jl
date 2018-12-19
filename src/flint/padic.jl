@@ -587,6 +587,18 @@ function teichmuller(a::padic)
    return z
 end
 
+
+@doc Markdown.doc"""
+    frobenius(a::padic)
+> Return the image of the $e$-th power of Frobenius on the $p$-adic value $a$.
+> Note that the Frobenius map is trivial on $p$-adics, this function exists for
+> uniformity of the $p$-adic and $q$-adic code.
+> The precision of the output will be the same as the precision of the input.
+"""
+function frobenius(a::padic, e::Int=1)
+   return a
+end
+
 ###############################################################################
 #
 #   Unsafe operators
@@ -636,6 +648,8 @@ end
 
 promote_rule(::Type{padic}, ::Type{T}) where {T <: Integer} = padic
 
+promote_rule(::Type{padic}, ::Type{Rational{V}}) where {V <: Integer} = padic
+
 promote_rule(::Type{padic}, ::Type{fmpz}) = padic
 
 promote_rule(::Type{padic}, ::Type{fmpq}) = padic
@@ -682,6 +696,10 @@ function (R::FlintPadicField)(n::fmpq)
          (Ref{padic}, Ref{fmpq}, Ref{FlintPadicField}), z, n, R)
    z.parent = R
    return z
+end
+
+function (R::FlintPadicField)(b::Rational{<:Integer})
+   return R(fmpq(b))
 end
 
 (R::FlintPadicField)(n::Integer) = R(fmpz(n))

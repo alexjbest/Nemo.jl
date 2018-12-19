@@ -109,7 +109,7 @@ function Base.deepcopy_internal(a::qadic, dict::IdDict{Any, Any})
 end
 
 function Base.hash(a::qadic, h::UInt)
-   return xor(hash(lift(FlintQQ, a), h), xor(hash(prime(parent(a)), h), h))
+   return xor(hash(lift(FmpqPolyRing(FlintQQ, :x), a), h), xor(hash([prime(parent(a)),degree(parent(a))], h), h))
 end
 
 function degree(R::FlintQadicField)
@@ -123,7 +123,7 @@ end
 function prime(R::FlintQadicField)
    z = fmpz()
    ccall((:padic_ctx_pow_ui, :libflint), Nothing,
-         (Ref{fmpz}, Int, Ref{FlintQadicField}), z, 1, R)
+         (Ref{fmpz}, UInt, Ref{FlintQadicField}), z, 1, R)
    return z
 end
 
@@ -141,6 +141,31 @@ precision(a::qadic) = a.N
 > will return $n$.
 """
 valuation(a::qadic) = ccall((:qadic_val, :libflint), Int, (Ref{qadic}, ), a)
+
+@doc Markdown.doc"""
+    lift(R::FmpqPolyRing, a::qadic)
+> Return a lift of the given $q$-adic field element to $\mathbb{Q}[x]$.
+"""
+function lift(R::FmpqPolyRing, a::qadic)
+   ctx = parent(a)
+   r = R()
+   ccall((:padic_poly_get_fmpq_poly, :libflint), Nothing,
+         (Ref{fmpq_poly}, Ref{qadic}, Ref{FlintQadicField}), r, a, ctx)
+   return r
+end
+
+@doc Markdown.doc"""
+    lift(R::FmpzPolyRing, a::qadic)
+> Return a lift of the given $q$-adic field element to $\mathbb{Z}[x]$ if possible.
+"""
+function lift(R::FmpzPolyRing, a::qadic)
+   ctx = parent(a)
+   r = R()
+   res = Bool(ccall((:padic_poly_get_fmpz_poly, :libflint), Cint,
+                    (Ref{fmpz_poly}, Ref{qadic}, Ref{FlintQadicField}), r, a, ctx))
+   !res && error("Unable to lift")
+   return r
+end
 
 @doc Markdown.doc"""
     zero(R::FlintQadicField)
@@ -196,19 +221,23 @@ isunit(a::qadic) = !Bool(ccall((:qadic_is_zero, :libflint), Cint,
 
 function show(io::IO, x::qadic)
    R = FlintPadicField(prime(parent(x)), parent(x).prec_max)
-   for i in 0:degree(parent(x))
+   if x == 0
+     print(io, "0")
+   end
+   for i in degree(parent(x)) - 1:-1:0
      z = R()
      ccall((:padic_poly_get_coeff_padic, :libflint), Nothing, (Ref{padic}, Ref{qadic}, Int, Ref{FlintQadicField}), z, x, i, parent(x))
+     if z == 0
+        continue
+     end
+     if i != degree(parent(x)) - 1
+        print(io, " + ")
+     end
      print(io, "(")
      print(io, z)
      print(io, ")")
-     if i < degree(parent(x))
-       print(io, "*a^$i + ")
-     else
-       print(io, "*a^$i")
-     end
+     print(io, "*a^$i")
    end
-   print(io, "\n")
 end
 
 function show(io::IO, R::FlintQadicField)
@@ -581,6 +610,20 @@ function teichmuller(a::qadic)
    return z
 end
 
+@doc Markdown.doc"""
+    frobenius(a::qadic)
+> Return the image of the $e$-th power of Frobenius on the $q$-adic value $a$.
+> The precision of the output will be the same as the precision of the input.
+"""
+function frobenius(a::qadic, e::Int=1)
+   ctx = parent(a)
+   z = qadic(a.N)
+   z.parent = ctx
+   ccall((:qadic_frobenius, :libflint), Nothing,
+         (Ref{qadic}, Ref{qadic}, Int, Ref{FlintQadicField}), z, a, e, ctx)
+   return z
+end
+
 ###############################################################################
 #
 #   Unsafe operators
@@ -629,6 +672,8 @@ end
 ###############################################################################
 
 promote_rule(::Type{qadic}, ::Type{T}) where {T <: Integer} = qadic
+
+promote_rule(::Type{qadic}, ::Type{Rational{V}}) where {V <: Integer} = qadic
 
 promote_rule(::Type{qadic}, ::Type{fmpz}) = qadic
 
@@ -702,6 +747,33 @@ function (R::FlintQadicField)(n::fmpq)
          (Ref{qadic}, Ref{fmpq}, Ref{FlintQadicField}), z, n, R)
    z.parent = R
    return z
+end
+
+function (R::FlintQadicField)(n::fmpz_poly)
+   z = qadic(R.prec_max)
+   ccall((:padic_poly_set_fmpz_poly, :libflint), Nothing,
+         (Ref{qadic}, Ref{fmpz_poly}, Ref{FlintQadicField}), z, n, R)
+   z.parent = R
+   return z
+end
+
+function (R::FlintQadicField)(n::fmpq_poly)
+   m = denominator(n)
+   p = prime(R)
+   if m == p
+      N = -1
+   else
+     N = -flog(m, p)
+   end
+   z = qadic(N + R.prec_max)
+   ccall((:padic_poly_set_fmpq_poly, :libflint), Nothing,
+         (Ref{qadic}, Ref{fmpq_poly}, Ref{FlintQadicField}), z, n, R)
+   z.parent = R
+   return z
+end
+
+function (R::FlintQadicField)(b::Rational{<:Integer})
+   return R(fmpq(b))
 end
 
 (R::FlintQadicField)(n::Integer) = R(fmpz(n))
