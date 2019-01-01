@@ -128,6 +128,10 @@ mutable struct fmpq <: FracElem{fmpz}
    function fmpq(a::Int, b::Int)
       b == 0 && throw(DivideError())
       z = new()
+      if b < 0 # Flint requires positive denominator
+         b = -b
+         a = -a
+      end
       ccall((:fmpq_init, :libflint), Nothing, (Ref{fmpq},), z)
       ccall((:fmpq_set_si, :libflint), Nothing,
             (Ref{fmpq}, Int, Int), z, a, b)
@@ -986,20 +990,14 @@ const Zmodn_fmpz_poly = Union{fmpz_mod_poly, gfp_fmpz_poly}
 
 const flint_orderings = [:lex, :deglex, :degrevlex]
 
-# S is a Symbol which can take the values:
-# :lex
-# :deglex
-# :degrevlex
-#
-# T is an Int which is the number of variables
-# (plus one if ordered by total degree)
-
 mutable struct FmpzMPolyRing <: MPolyRing{fmpz}
    nvars::Int
    nfields::Cint
    ord::Int
    deg::Cint
    rev::Cint
+   lut::NTuple{64, Int}
+   lut1::NTuple{64, Int}
    base_ring::FlintIntegerRing
    S::Array{Symbol, 1}
 
@@ -1059,8 +1057,8 @@ mutable struct fmpz_mpoly <: MPolyElem{fmpz}
 
    function fmpz_mpoly(ctx::FmpzMPolyRing, a::Vector{fmpz}, b::Vector{Vector{UInt}})
       z = new()
-      ccall((:fmpz_mpoly_init, :libflint), Nothing,
-            (Ref{fmpz_mpoly}, Ref{FmpzMPolyRing},), z, ctx)
+      ccall((:fmpz_mpoly_init2, :libflint), Nothing,
+            (Ref{fmpz_mpoly}, Int, Ref{FmpzMPolyRing},), z, length(a), ctx)
       z.parent = ctx
       finalizer(_fmpz_mpoly_clear_fn, z)
 
@@ -1079,8 +1077,8 @@ mutable struct fmpz_mpoly <: MPolyElem{fmpz}
 
    function fmpz_mpoly(ctx::FmpzMPolyRing, a::Vector{fmpz}, b::Vector{Vector{Int}})
       z = new()
-      ccall((:fmpz_mpoly_init, :libflint), Nothing,
-            (Ref{fmpz_mpoly}, Ref{FmpzMPolyRing},), z, ctx)
+      ccall((:fmpz_mpoly_init2, :libflint), Nothing,
+            (Ref{fmpz_mpoly}, Int, Ref{FmpzMPolyRing},), z, length(a), ctx)
       z.parent = ctx
       finalizer(_fmpz_mpoly_clear_fn, z)
 
@@ -1099,8 +1097,8 @@ mutable struct fmpz_mpoly <: MPolyElem{fmpz}
 
    function fmpz_mpoly(ctx::FmpzMPolyRing, a::Vector{fmpz}, b::Vector{Vector{fmpz}})
       z = new()
-      ccall((:fmpz_mpoly_init, :libflint), Nothing,
-            (Ref{fmpz_mpoly}, Ref{FmpzMPolyRing},), z, ctx)
+      ccall((:fmpz_mpoly_init2, :libflint), Nothing,
+            (Ref{fmpz_mpoly}, Int, Ref{FmpzMPolyRing},), z, length(a), ctx)
       z.parent = ctx
       finalizer(_fmpz_mpoly_clear_fn, z)
 
@@ -1162,17 +1160,14 @@ end
 #
 ###############################################################################
 
-# S is a Symbol which can take the values:
-# :lex
-# :deglex
-# :degrevlex
-
 mutable struct FmpqMPolyRing <: MPolyRing{fmpq}
    nvars::Int
    nfields::Cint
    ord::Int
    deg::Cint
    rev::Cint
+   lut::NTuple{64, Int}
+   lut1::NTuple{64, Int}
    base_ring::FlintRationalField
    S::Array{Symbol, 1}
 
@@ -1234,8 +1229,8 @@ mutable struct fmpq_mpoly <: MPolyElem{fmpq}
 
    function fmpq_mpoly(ctx::FmpqMPolyRing, a::Vector{fmpq}, b::Vector{Vector{UInt}})
       z = new()
-      ccall((:fmpq_mpoly_init, :libflint), Nothing,
-            (Ref{fmpq_mpoly}, Ref{FmpqMPolyRing},), z, ctx)
+      ccall((:fmpq_mpoly_init2, :libflint), Nothing,
+            (Ref{fmpq_mpoly}, Int, Ref{FmpqMPolyRing},), z, length(a), ctx)
       z.parent = ctx
       finalizer(_fmpq_mpoly_clear_fn, z)
 
@@ -1254,15 +1249,15 @@ mutable struct fmpq_mpoly <: MPolyElem{fmpq}
 
    function fmpq_mpoly(ctx::FmpqMPolyRing, a::Vector{fmpq}, b::Vector{Vector{Int}})
       z = new()
-      ccall((:fmpq_mpoly_init, :libflint), Nothing,
-            (Ref{fmpq_mpoly}, Ref{FmpqMPolyRing},), z, ctx)
+      ccall((:fmpq_mpoly_init2, :libflint), Nothing,
+            (Ref{fmpq_mpoly}, Int, Ref{FmpqMPolyRing},), z, length(a), ctx)
       z.parent = ctx
       finalizer(_fmpq_mpoly_clear_fn, z)
 
       for i in 1:length(a)
         ccall((:fmpq_mpoly_push_term_fmpq_ui, :libflint), Nothing,
-              (Ref{fmpq_mpoly}, Ref{fmpq}, Ptr{UInt}, Ref{FmpqMPolyRing}),
-              z, a[i], UInt(b[i]), ctx)
+              (Ref{fmpq_mpoly}, Ref{fmpq}, Ptr{Int}, Ref{FmpqMPolyRing}),
+              z, a[i], b[i], ctx)
       end
 
       ccall((:fmpq_mpoly_sort_terms, :libflint), Nothing,
@@ -1274,8 +1269,8 @@ mutable struct fmpq_mpoly <: MPolyElem{fmpq}
 
    function fmpq_mpoly(ctx::FmpqMPolyRing, a::Vector{fmpq}, b::Vector{Vector{fmpz}})
       z = new()
-      ccall((:fmpq_mpoly_init, :libflint), Nothing,
-            (Ref{fmpq_mpoly}, Ref{FmpqMPolyRing},), z, ctx)
+      ccall((:fmpq_mpoly_init2, :libflint), Nothing,
+            (Ref{fmpq_mpoly}, Int, Ref{FmpqMPolyRing},), z, length(a), ctx)
       z.parent = ctx
       finalizer(_fmpq_mpoly_clear_fn, z)
 
@@ -1340,6 +1335,169 @@ end
 function _fmpq_mpoly_clear_fn(a::fmpq_mpoly)
   ccall((:fmpq_mpoly_clear, :libflint), Nothing,
           (Ref{fmpq_mpoly}, Ref{FmpqMPolyRing}), a, a.parent)
+end
+
+###############################################################################
+#
+#   NmodMPolyRing / nmod_mpoly
+#
+###############################################################################
+
+mutable struct NmodMPolyRing <: MPolyRing{nmod}
+   n::UInt
+   ninv::UInt
+   norm::Int
+   extras::Ptr{Int}
+   nvars::Int
+   nfields::Int
+   ord::Cint
+   deg::Cint
+   rev::Cint
+   lut::NTuple{64, Int}
+   lut1::NTuple{64, Int}
+   base_ring::NmodRing
+   S::Array{Symbol, 1}
+
+   function NmodMPolyRing(R::NmodRing, s::Array{Symbol, 1}, S::Symbol, cached::Bool = true)
+      if cached && haskey(NmodMPolyID, (R, s, S))
+         return NmodMPolyID[R, s, S]
+      else
+         if S == :lex
+            ord = 0
+         elseif S == :deglex
+            ord = 1
+         elseif S == :degrevlex
+            ord = 2
+         else
+            error("$S is not a valid ordering")
+         end
+
+         z = new()
+         ccall((:nmod_mpoly_ctx_init, :libflint), Nothing,
+               (Ref{NmodMPolyRing}, Int, Cint, UInt),
+               z, length(s), ord, R.n)
+         z.base_ring = R
+         z.S = s
+         finalizer(_nmod_mpoly_ctx_clear_fn, z)
+         if cached
+            NmodMPolyID[R, s, S] = z
+         end
+         return z
+      end
+   end
+end
+
+function _nmod_mpoly_ctx_clear_fn(a::NmodMPolyRing)
+   ccall((:nmod_mpoly_ctx_clear, :libflint), Nothing,
+           (Ref{NmodMPolyRing},), a)
+end
+
+const NmodMPolyID = Dict{Tuple{NmodRing, Array{Symbol, 1}, Symbol}, NmodMPolyRing}()
+
+mutable struct nmod_mpoly <: MPolyElem{nmod}
+   coeffs::Ptr{Nothing}
+   exps::Ptr{Nothing}
+   alloc::Int
+   length::Int
+   bits::Int
+
+   parent::NmodMPolyRing
+
+   function nmod_mpoly(ctx::NmodMPolyRing)
+      z = new()
+      ccall((:nmod_mpoly_init, :libflint), Nothing,
+            (Ref{nmod_mpoly}, Ref{NmodMPolyRing},), z, ctx)
+      z.parent = ctx
+      finalizer(_nmod_mpoly_clear_fn, z)
+      return z
+   end
+
+   function nmod_mpoly(ctx::NmodMPolyRing, a::Vector{nmod}, b::Vector{Vector{UInt}})
+      z = new()
+      ccall((:nmod_mpoly_init2, :libflint), Nothing,
+            (Ref{nmod_mpoly}, Int, Ref{NmodMPolyRing},), z, length(a), ctx)
+      z.parent = ctx
+      finalizer(_nmod_mpoly_clear_fn, z)
+
+      for i in 1:length(a)
+         ccall((:nmod_mpoly_push_term_ui_ui, :libflint), Nothing,
+               (Ref{nmod_mpoly}, UInt, Ptr{UInt}, Ref{NmodMPolyRing}),
+               z, a[i].data, b[i], ctx)
+       end
+
+       ccall((:nmod_mpoly_sort_terms, :libflint), Nothing,
+             (Ref{nmod_mpoly}, Ref{NmodMPolyRing}), z, ctx)
+       ccall((:nmod_mpoly_combine_like_terms, :libflint), Nothing,
+             (Ref{nmod_mpoly}, Ref{NmodMPolyRing}), z, ctx)
+       return z
+   end
+
+   function nmod_mpoly(ctx::NmodMPolyRing, a::Vector{nmod}, b::Vector{Vector{Int}})
+      z = new()
+      ccall((:nmod_mpoly_init2, :libflint), Nothing,
+            (Ref{nmod_mpoly}, Int, Ref{NmodMPolyRing},), z, length(a), ctx)
+      z.parent = ctx
+      finalizer(_nmod_mpoly_clear_fn, z)
+
+      for i in 1:length(a)
+         ccall((:nmod_mpoly_push_term_ui_ui, :libflint), Nothing,
+               (Ref{nmod_mpoly}, UInt, Ptr{Int}, Ref{NmodMPolyRing}),
+               z, a[i].data, b[i], ctx)
+       end
+
+       ccall((:nmod_mpoly_sort_terms, :libflint), Nothing,
+             (Ref{nmod_mpoly}, Ref{NmodMPolyRing}), z, ctx)
+       ccall((:nmod_mpoly_combine_like_terms, :libflint), Nothing,
+             (Ref{nmod_mpoly}, Ref{NmodMPolyRing}), z, ctx)
+       return z
+   end
+
+   function nmod_mpoly(ctx::NmodMPolyRing, a::Vector{nmod}, b::Vector{Vector{fmpz}})
+      z = new()
+      ccall((:nmod_mpoly_init2, :libflint), Nothing,
+            (Ref{nmod_mpoly}, Int, Ref{NmodMPolyRing},), z, length(a), ctx)
+      z.parent = ctx
+      finalizer(_nmod_mpoly_clear_fn, z)
+
+      for i in 1:length(a)
+         ccall((:nmod_mpoly_push_term_ui_fmpz, :libflint), Nothing,
+               (Ref{nmod_mpoly}, UInt, Ptr{Ref{fmpz}}, Ref{NmodMPolyRing}),
+               z, a[i].data, b[i], ctx)
+       end
+
+       ccall((:nmod_mpoly_sort_terms, :libflint), Nothing,
+             (Ref{nmod_mpoly}, Ref{NmodMPolyRing}), z, ctx)
+       ccall((:nmod_mpoly_combine_like_terms, :libflint), Nothing,
+             (Ref{nmod_mpoly}, Ref{NmodMPolyRing}), z, ctx)
+       return z
+   end
+
+   function nmod_mpoly(ctx::NmodMPolyRing, a::UInt)
+      z = new()
+      ccall((:nmod_mpoly_init, :libflint), Nothing,
+            (Ref{nmod_mpoly}, Ref{NmodMPolyRing},), z, ctx)
+      ccall((:nmod_mpoly_set_ui, :libflint), Nothing,
+            (Ref{nmod_mpoly}, UInt, Ref{NmodMPolyRing}), z, a, ctx)
+      z.parent = ctx
+      finalizer(_nmod_mpoly_clear_fn, z)
+      return z
+   end
+
+   function nmod_mpoly(ctx::NmodMPolyRing, a::nmod)
+      z = new()
+      ccall((:nmod_mpoly_init, :libflint), Nothing,
+            (Ref{nmod_mpoly}, Ref{NmodMPolyRing},), z, ctx)
+      ccall((:nmod_mpoly_set_ui, :libflint), Nothing,
+            (Ref{nmod_mpoly}, UInt, Ref{NmodMPolyRing}), z, a.data, ctx)
+      finalizer(_nmod_mpoly_clear_fn, z)
+      z.parent = ctx
+      return z
+   end
+end
+
+function _nmod_mpoly_clear_fn(a::nmod_mpoly)
+   ccall((:nmod_mpoly_clear, :libflint), Nothing,
+          (Ref{nmod_mpoly}, Ref{NmodMPolyRing}), a, a.parent)
 end
 
 ###############################################################################
@@ -1629,6 +1787,7 @@ end
 #
 ###############################################################################
 
+const flint_padic_printing_mode = [:terse, :series, :val_unit]
 
 mutable struct FlintPadicField <: Field
    p::Int
@@ -1636,22 +1795,46 @@ mutable struct FlintPadicField <: Field
    pow::Ptr{Nothing}
    minpre::Int
    maxpre::Int
-   mode::Int
+   mode::Cint
    prec_max::Int
 
-   function FlintPadicField(p::fmpz, prec::Int)
+   function FlintPadicField(p::fmpz, prec::Int; printing::Symbol = :series,
+                                                cached::Bool = true)
+      if cached
+         a = (p, prec, printing)
+         if haskey(PadicBase, a)
+            return PadicBase[a]
+         end
+      end
+
       !isprime(p) && error("Prime base required in FlintPadicField")
       d = new()
+      if printing == :terse
+         pmode = 0
+      elseif printing == :series
+         pmode = 1
+      elseif printing == :val_unit
+         pmode = 2
+      else
+         error("Invalid printing mode: $printing")
+      end
+
       ccall((:padic_ctx_init, :libflint), Nothing,
-           (Ref{FlintPadicField}, Ref{fmpz}, Int, Int, Cint),
-                                     d, p, 0, 0, 1)
+            (Ref{FlintPadicField}, Ref{fmpz}, Int, Int, Cint),
+            d, p, 0, 0, pmode)
       finalizer(_padic_ctx_clear_fn, d)
       d.prec_max = prec
+
+      if cached
+         @assert !haskey(PadicBase, (p, prec, printing))
+         PadicBase[(p, prec, printing)] = d
+      end
+
       return d
    end
 end
 
-const PadicBase = Dict{Tuple{fmpz, Int}, FlintPadicField}()
+const PadicBase = Dict{Tuple{fmpz, Int, Symbol}, FlintPadicField}()
 
 function _padic_ctx_clear_fn(a::FlintPadicField)
    ccall((:padic_ctx_clear, :libflint), Nothing, (Ref{FlintPadicField},), a)

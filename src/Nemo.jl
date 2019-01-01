@@ -12,7 +12,7 @@ end
 
 import Base: Array, abs, acos, acosh, asin, asinh, atan, atanh, 
              bin, ceil, checkbounds, conj, convert, cmp, cos, cosh,
-             cospi, cot, coth, dec, deepcopy, deepcopy_internal, 
+             cospi, cot, coth, dec, deepcopy, deepcopy_internal, denominator, 
              div, divrem, expm1, exp, floor, gcd, gcdx, getindex,
              hash, hcat, hex, hypot, intersect, inv, invmod, isequal,
              isfinite, isinteger, isless, isqrt, isreal, iszero, lcm, ldexp, length,
@@ -34,15 +34,19 @@ import AbstractAlgebra: nullspace
 # We don't want the QQ, ZZ, FiniteField, NumberField from AbstractAlgebra
 # as they are for parents of Julia types or naive implementations
 # We only import AbstractAlgebra, not export
-# We do not want the AbstractAlgebra version of exp and sqrt, but the Base version
-# which is the only place user friendly exp and sqrt are defined
+# We do not want the AbstractAlgebra version of certain functions as the Base version
+# is the only place user friendly versions are defined
 # AbstractAlgebra/Nemo has its own promote_rule, distinct from Base
 # Set, Module, Ring, Group and Field are too generic to pollute the users namespace with
-exclude = [:QQ, :ZZ, :RR, :RealField, :FiniteField, :NumberField,
+exclude = try
+   AbstractAlgebra.import_exclude
+catch
+   [:import_exclude, :QQ, :ZZ, :RR, :RealField, :FiniteField, :NumberField,
            :AbstractAlgebra, 
            :exp, :sqrt,
            :promote_rule,
            :Set, :Module, :Ring, :Group, :Field]
+end
 
 for i in names(AbstractAlgebra)
   i in exclude && continue
@@ -234,7 +238,7 @@ function __init__()
          (Ptr{Nothing},), @cfunction(flint_abort, Nothing, ()))
 
    println("")
-   println("Welcome to Nemo version 0.10.3")
+   println("Welcome to Nemo version 0.11.0")
    println("")
    println("Nemo comes with absolutely no warranty whatsoever")
    println("")
@@ -255,7 +259,7 @@ end
 ################################################################################
 
 function versioninfo()
-  print("Nemo version 0.10.3\n")
+  print("Nemo version 0.11.0\n")
   nemorepo = dirname(dirname(@__FILE__))
 
   print("Nemo: ")
