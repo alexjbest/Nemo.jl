@@ -1629,7 +1629,7 @@ mutable struct fq_nmod <: FinFieldElem
       return d
    end
 
-      function fq_nmod(ctx::FqNmodFiniteField, x::fq_nmod)
+   function fq_nmod(ctx::FqNmodFiniteField, x::fq_nmod)
       d = new()
       ccall((:fq_nmod_init2, :libflint), Nothing,
             (Ref{fq_nmod}, Ref{FqNmodFiniteField}), d, ctx)
