@@ -6,8 +6,8 @@ oldwdir = pwd()
 @show YASM_VERSION = "1.3.0"
 @show MPIR_VERSION = "3.0.0-90740d8fdf03b941b55723b449831c52fd7f51ca"
 @show MPFR_VERSION = "4.0.0"
-@show ANTIC_VERSION = "96b37f6242526f95f68f1f15c925db5a4a19a21c"
-@show FLINT_VERSION = "24d5d1619142f7f80cf72c9abd4a4d463f4e11c7"
+@show ANTIC_VERSION = "ede86094503380648ce51fa56cd3ff16217cffed"
+@show FLINT_VERSION = "34adb7359da4ca2ad2a86635e374bf711e520056"
 @show ARB_VERSION = "fe53e3f306380b5a65b30dcec776e10428601790"
 
 pkgdir = dirname(dirname(@__FILE__))
@@ -312,7 +312,7 @@ if Sys.iswindows()
    if Int == Int32
       download_dll("http://nemocas.org/binaries/w32-libantic.dll", joinpath(vdir, "lib", "libantic.dll"))
    else
-      download_dll("http://nemocas.org/binaries/w64-libantic.dll", joinpath(vdir, "lib", "libantic.dll"))
+      download_dll("http://nemocas.org/binaries/w64-libantic.dll.$ANTIC_VERSION", joinpath(vdir, "lib", "libantic.dll"))
    end
    println("DONE")
 else
