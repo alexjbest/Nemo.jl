@@ -537,9 +537,18 @@ function (a::FqFiniteField)(b::fmpz)
    return z
 end
 
+function (a::FqFiniteField)(b::fmpq)
+   z = fq(a, numerator(b))*inv(fq(a,denominator(b)))
+   return z
+end
+
 function (a::FqFiniteField)(b::fq)
    parent(b) != a && error("Coercion between finite fields not implemented")
    return b
+end
+
+function (a::FqFiniteField)(b::Rational{<:Integer})
+   return a(fmpq(b))
 end
 
 ###############################################################################

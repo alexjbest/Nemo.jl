@@ -446,9 +446,22 @@ function (a::FqNmodFiniteField)(b::fmpz)
    return z
 end
 
+function (a::FqNmodFiniteField)(b::fmpq)
+   zn = fq_nmod(a, numerator(b))
+   zn.parent = a
+   zd = fq_nmod(a,denominator(b))
+   zd.parent = a
+   zd = inv(zd)
+   return zn*zd
+end
+
 function (a::FqNmodFiniteField)(b::fq_nmod)
    parent(b) != a && error("Coercion between finite fields not implemented")
    return b
+end
+
+function (a::FqNmodFiniteField)(b::Rational{<:Integer})
+   return a(fmpq(b))
 end
 
 ###############################################################################

@@ -424,10 +424,19 @@ function (R::NmodRing)(a::UInt)
    return nmod(a, R)
 end
 
+function (R::NmodRing)(a::fmpq)
+   z = R(numerator(a))*inv(R(denominator(a)))
+   return z
+end
+
 function (R::NmodRing)(a::fmpz)
    d = ccall((:fmpz_fdiv_ui, :libflint), UInt, (Ref{fmpz}, UInt),
              a, R.n)
    return nmod(d, R)
+end
+
+function (R::NmodRing)(b::Rational{<:Integer})
+   return R(fmpq(b))
 end
 
 function (R::NmodRing)(a::nmod)

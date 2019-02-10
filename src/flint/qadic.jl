@@ -410,6 +410,9 @@ end
 
 function ^(a::qadic, n::fmpz)
    ctx = parent(a)
+   if n < 0
+      return inv(a)^(-n)
+   end
    z = qadic(a.N + (Int(n) - 1)*valuation(a))
    z.parent = ctx
    ccall((:qadic_pow, :libflint), Nothing,
