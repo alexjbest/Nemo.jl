@@ -225,6 +225,7 @@ function show(io::IO, x::qadic)
    R = FlintPadicField(prime(parent(x)), parent(x).prec_max)
    if iszero(x) 
      print(io, "0")
+     return
    end
    len = degree(parent(x)) + 1
    c = R()
@@ -763,7 +764,7 @@ end
 
 function (R::FlintQadicField)(n::fmpz_poly)
    z = qadic(R.prec_max)
-   ccall((:padic_poly_set_fmpz_poly, :libflint), Nothing,
+   ccall((:qadic_set_fmpz_poly, :libflint), Nothing,
          (Ref{qadic}, Ref{fmpz_poly}, Ref{FlintQadicField}), z, n, R)
    z.parent = R
    return z
