@@ -210,6 +210,8 @@ isone(a::padic) = Bool(ccall((:padic_is_one, :libflint), Cint,
 isunit(a::padic) = !Bool(ccall((:padic_is_zero, :libflint), Cint,
                               (Ref{padic},), a))
 
+characteristic(R::FlintPadicField) = 0
+
 ###############################################################################
 #
 #   String I/O
@@ -576,7 +578,7 @@ end
 > exception is thrown.
 """
 function Base.exp(a::padic)
-   !iszero(a) && a.v <= 0 && throw(DomainError("Valuation must be positive: $a"))
+   !iszero(a) && a.v <= 0 && throw(DomainError(a, "Valuation must be positive"))
    ctx = parent(a)
    z = padic(a.N)
    z.parent = ctx
@@ -594,7 +596,7 @@ end
 > exception is thrown.
 """
 function log(a::padic)
-   (a.v > 0 || a.v < 0 || iszero(a)) && throw(DomainError("Valuation must be zero: $(a)"))
+   (a.v > 0 || a.v < 0 || iszero(a)) && throw(DomainError(a, "Valuation must be zero"))
    ctx = parent(a)
    z = padic(a.N)
    z.parent = ctx
@@ -613,7 +615,7 @@ end
 > thrown.
 """
 function teichmuller(a::padic)
-   a.v < 0 && throw(DomainError("Valuation must be non-negative"))
+   a.v < 0 && throw(DomainError(a.v, "Valuation must be non-negative"))
    ctx = parent(a)
    z = padic(a.N)
    z.parent = ctx
@@ -710,7 +712,7 @@ function (R::FlintPadicField)(n::fmpq)
    if m == p
       N = -1
    else
-     N = -flog(m, p)
+     N = -remove(m, p)[1]
    end
    z = padic(N + R.prec_max)
    ccall((:padic_set_fmpq, :libflint), Nothing,

@@ -6,28 +6,27 @@ using Markdown
 
 using InteractiveUtils
 
-if VERSION >= v"0.7.0-"
-   using Libdl
-end
+using Libdl
+
+using Random
 
 import Base: Array, abs, acos, acosh, asin, asinh, atan, atanh,
-             bin, ceil, checkbounds, conj, convert, cmp, cos, cosh,
+             bin, binomial, ceil, checkbounds, conj, convert, cmp, cos, cosh,
              cospi, cot, coth, dec, deepcopy, deepcopy_internal, denominator,
-             div, divrem, expm1, exp, floor, gcd, gcdx, getindex,
-             hash, hcat, hex, hypot, intersect, inv, invmod, isequal,
-             isfinite, isinteger, isless, isqrt, isreal, iszero, lcm, ldexp, length,
-             log, log1p, mod, ndigits, numerator, oct, one, parent, parse, precision,
+             div, divrem, expm1, exp, factorial, floor, gcd, gcdx, getindex,
+             hash, hcat, hex, hypot, intersect, inv, invmod, isequal, iseven,
+             isfinite, isinteger, isless, isodd, isqrt, isreal, iszero, lcm,
+             ldexp, length,
+             log, log1p, mod, ndigits, numerator, oct, one, parent, parse,
+             precision,
              rand, Rational, rem, reverse,
              setindex!, show, similar, sign, sin, sinh, sinpi, size, sqrt, string,
              tan, tanh, trailing_zeros, transpose, truncate,
              typed_hvcat, typed_hcat, vcat, xor, zero, zeros, +, -, *, ==, ^,
              &, |, <<, >>, ~, <=, >=, <, >, //, /, !=
 
-if VERSION <= v"0.7.0"
-   import Base: atan2, base, contains, nextpow2, prevpow2
-end
-
-import LinearAlgebra: det, norm, nullspace, rank, transpose!, hessenberg, tr, lu, lu!
+import LinearAlgebra: det, norm, nullspace, rank, transpose!, hessenberg, tr,
+                      lu, lu!, eigvals
 
 import AbstractAlgebra: nullspace
 
@@ -38,21 +37,14 @@ import AbstractAlgebra: nullspace
 # is the only place user friendly versions are defined
 # AbstractAlgebra/Nemo has its own promote_rule, distinct from Base
 # Set, Module, Ring, Group and Field are too generic to pollute the users namespace with
-exclude = try
-   AbstractAlgebra.import_exclude
-catch
-   [:import_exclude, :QQ, :ZZ, :RR, :RealField, :FiniteField, :NumberField,
-           :AbstractAlgebra,
-           :exp, :sqrt,
-           :promote_rule,
-           :Set, :Module, :Ring, :Group, :Field]
+for i in names(AbstractAlgebra)
+   i in AbstractAlgebra.import_exclude && continue
+   i == :GF && continue
+   eval(Meta.parse("import AbstractAlgebra." * string(i)))
+   eval(Expr(:export, i))
 end
 
-for i in names(AbstractAlgebra)
-  i in exclude && continue
-  eval(Meta.parse("import AbstractAlgebra." * string(i)))
-  eval(Expr(:export, i))
-end
+export GF
 
 import AbstractAlgebra: Set, Module, Ring, Group, Field, promote_rule
 
@@ -106,9 +98,17 @@ else
    const libantic = joinpath(pkgdir, "deps", "usr", "lib", "libantic")
 end
 
+const __isthreaded =  "NEMO_THREADED" in keys(ENV) && ENV["NEMO_THREADED"] == "1"
+
 function flint_abort()
   error("Problem in the Flint-Subsystem")
 end
+
+################################################################################
+#
+#  Debugging tools for allocation tracking
+#
+################################################################################
 
 active_mem = Dict{UInt, Tuple{Symbol, UInt, Any}}()
 
@@ -125,7 +125,6 @@ function trace_calloc(n::UInt, s::UInt)
   active_mem[u] = (:calloc, n*s, backtrace())
   return u
 end
-
 
 function trace_free(n::UInt)
   global active_mem
@@ -163,7 +162,7 @@ function trace_counted_free(n::UInt, s::UInt)
   global active_mem
 #  @assert haskey(active_mem, n)
   delete!(active_mem, n)
-  ccall(:jl_gc_counted_free, Nothing, (UInt, UInt), n, s)
+  ccall(:jl_gc_counted_free_with_size, Nothing, (UInt, UInt), n, s)
 end
 
 function show_active(l::UInt = UInt(0), frames::Int = 2)
@@ -199,7 +198,7 @@ function trace_memory(b::Bool)
        (Ptr{Nothing},Ptr{Nothing},Ptr{Nothing}),
        cglobal(:jl_gc_counted_malloc),
        cglobal(:jl_gc_counted_realloc_with_old_size),
-       cglobal(:jl_gc_counted_free))
+       cglobal(:jl_gc_counted_free_with_size))
 
     ccall((:__flint_set_memory_functions, libflint), Nothing,
        (Ptr{Nothing},Ptr{Nothing},Ptr{Nothing},Ptr{Nothing}),
@@ -210,7 +209,20 @@ function trace_memory(b::Bool)
   end
 end
 
+################################################################################
+#
+#  Initialization function
+#
+################################################################################
+
 function __init__()
+   # In case libgmp picks up the wrong libgmp later on, we "unset" the jl_*
+   # functions from the julia :libgmp.
+   if __isthreaded
+      ccall((:__gmp_set_memory_functions, :libgmp), Nothing,
+            (Int, Int, Int), 0, 0, 0)
+   end
+
    if "HOSTNAME" in keys(ENV) && ENV["HOSTNAME"] == "juliabox"
        push!(Libdl.DL_LOAD_PATH, "/usr/local/lib")
    elseif Sys.islinux()
@@ -226,25 +238,27 @@ function __init__()
    end
 
    if !Sys.iswindows()
-      ccall((:__gmp_set_memory_functions, libgmp), Nothing,
-         (Ptr{Nothing},Ptr{Nothing},Ptr{Nothing}),
-         cglobal(:jl_gc_counted_malloc),
-         cglobal(:jl_gc_counted_realloc_with_old_size),
-         cglobal(:jl_gc_counted_free))
+     if !__isthreaded
+         ccall((:__gmp_set_memory_functions, libgmp), Nothing,
+            (Ptr{Nothing},Ptr{Nothing},Ptr{Nothing}),
+            cglobal(:jl_gc_counted_malloc),
+            cglobal(:jl_gc_counted_realloc_with_old_size),
+            cglobal(:jl_gc_counted_free_with_size))
 
-      ccall((:__flint_set_memory_functions, libflint), Nothing,
-         (Ptr{Nothing},Ptr{Nothing},Ptr{Nothing},Ptr{Nothing}),
-         cglobal(:jl_malloc),
-         cglobal(:jl_calloc),
-         cglobal(:jl_realloc),
-         cglobal(:jl_free))
+         ccall((:__flint_set_memory_functions, libflint), Nothing,
+            (Ptr{Nothing},Ptr{Nothing},Ptr{Nothing},Ptr{Nothing}),
+            cglobal(:jl_malloc),
+            cglobal(:jl_calloc),
+            cglobal(:jl_realloc),
+            cglobal(:jl_free))
+      end
    end
 
    ccall((:flint_set_abort, libflint), Nothing,
          (Ptr{Nothing},), @cfunction(flint_abort, Nothing, ()))
 
    println("")
-   println("Welcome to Nemo version 0.13.3")
+   println("Welcome to Nemo version $(version())")
    println("")
    println("Nemo comes with absolutely no warranty whatsoever")
    println("")
@@ -253,10 +267,24 @@ function __init__()
 
   global _get_Special_of_nf = t[1]
   global _set_Special_of_nf = t[2]
+
+  # Initialize the thread local random state
+  resize!(_flint_rand_states, Threads.nthreads())
+  for i in 1:Threads.nthreads()
+     _flint_rand_states[i] = rand_ctx()
+  end
+
+  # Initialize the thread local ECM parameters
+  Threads.resize_nthreads!(_ecm_B1s)
+  Threads.resize_nthreads!(_ecm_nCs)
 end
 
 function flint_set_num_threads(a::Int)
-   ccall((:flint_set_num_threads, libflint), Nothing, (Int,), a)
+   if !__isthreaded
+     error("To use threaded flint, julia has to be started with NEMO_THREADED=1")
+   else
+     ccall((:flint_set_num_threads, libflint), Nothing, (Int,), a)
+   end
 end
 
 function flint_cleanup()
@@ -269,8 +297,10 @@ end
 #
 ################################################################################
 
+version() = v"0.16.2-dev"
+
 function versioninfo()
-  print("Nemo version 0.13.3\n")
+  print("Nemo version $(version())\n")
   nemorepo = dirname(dirname(@__FILE__))
 
   print("Nemo: ")
@@ -316,7 +346,7 @@ end
 
 export PowerSeriesRing, PolynomialRing, SparsePolynomialRing, MatrixSpace,
        FractionField, ResidueRing, Partition, PermGroup, YoungTableau,
-       AllParts, SkewDiagram, AllPerms, perm, LaurentSeriesRing,
+       AllParts, SkewDiagram, AllPerms, Perm, LaurentSeriesRing,
        LaurentSeriesField, PuiseuxSeriesRing, ResidueField
 
 export Generic
@@ -326,6 +356,8 @@ export Generic
 #   Load Nemo Rings/Fields/etc
 #
 ###############################################################################
+
+include("embedding/EmbeddingTypes.jl")
 
 include("flint/FlintTypes.jl")
 
@@ -337,7 +369,26 @@ include("arb/ArbTypes.jl")
 
 include("flint/adhoc.jl")
 
+include("embedding/embedding.jl")
+
 include("Rings.jl")
+
+include("common.jl")
+
+################################################################################
+#
+#  Thread local storages
+#
+################################################################################
+
+const _flint_rand_states = rand_ctx[]
+
+# Data from http://www.mersennewiki.org/index.php/Elliptic_Curve_Method
+const _ecm_B1 = Int[2, 11, 50, 250, 1000, 3000, 11000, 43000, 110000, 260000, 850000, 2900000];
+const _ecm_nC = Int[25, 90, 300, 700, 1800, 5100, 10600, 19300, 49000, 124000, 210000, 340000];
+
+const _ecm_B1s = Vector{Int}[_ecm_B1]
+const _ecm_nCs = Vector{Int}[_ecm_nC]
 
 ###############################################################################
 #
@@ -345,11 +396,11 @@ include("Rings.jl")
 #
 ###############################################################################
 
-ZZ = FlintZZ
-QQ = FlintQQ
-PadicField = FlintPadicField
-QadicField = FlintQadicField
-FiniteField = FlintFiniteField
+const ZZ = FlintZZ
+const QQ = FlintQQ
+const PadicField = FlintPadicField
+const QadicField = FlintQadicField
+const FiniteField = FlintFiniteField
 
 ###############################################################################
 #
@@ -357,8 +408,8 @@ FiniteField = FlintFiniteField
 #
 ###############################################################################
 
-RealField = ArbField
-ComplexField = AcbField
+const RealField = ArbField
+const ComplexField = AcbField
 
 ###############################################################################
 #
@@ -393,7 +444,7 @@ function test_module(x, y)
    end
 
    cmd = "using Test; using Nemo; include(\"$test_file\"); $test_function_name();"
-   @info("spawning ", `$julia_exe -e \"$cmd\"`)
+   println("spawning ", `$julia_exe -e \"$cmd\"`)
    run(`$julia_exe -e $cmd`)
 end
 

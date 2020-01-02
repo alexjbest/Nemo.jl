@@ -51,6 +51,8 @@ end
 
 show_minus_one(::Type{nf_elem}) = false
 
+characteristic(::AnticNumberField) = 0
+
 ###############################################################################
 #
 #   Basic manipulation
@@ -80,7 +82,7 @@ function hash(a::nf_elem, h::UInt)
              b = (b << 1) | (b >> (sizeof(Int)*8 - 1))
        end
    end
-      
+
    return b
 end
 
@@ -91,7 +93,7 @@ end
 > constant coefficient.
 """
 function coeff(x::nf_elem, n::Int)
-   n < 0 && throw(DomainError("Index must be non-negative: $n"))
+   n < 0 && throw(DomainError(n, "Index must be non-negative"))
    z = fmpq()
    ccall((:nf_elem_get_coeff_fmpq, :libantic), Nothing,
      (Ref{fmpq}, Ref{nf_elem}, Int, Ref{AnticNumberField}), z, x, n, parent(x))
@@ -99,7 +101,7 @@ function coeff(x::nf_elem, n::Int)
 end
 
 function num_coeff!(z::fmpz, x::nf_elem, n::Int)
-   n < 0 && throw(DomainError("Index must be non-negative: $n"))
+   n < 0 && throw(DomainError(n, "Index must be non-negative"))
    ccall((:nf_elem_get_coeff_fmpz, :libantic), Nothing,
      (Ref{fmpz}, Ref{nf_elem}, Int, Ref{AnticNumberField}), z, x, n, parent(x))
    return z
@@ -777,9 +779,9 @@ end
 
 @doc Markdown.doc"""
     mul_red!(z::nf_elem, x::nf_elem, y::nf_elem, red::Bool)
-> Multiply $a$ by $b$ and set the existing number field element $c$ to the
+> Multiply $x$ by $y$ and set the existing number field element $z$ to the
 > result. Reduction modulo the defining polynomial is only performed if `red` is
-> set to `true`. Note that $a$ and $b$ must be reduced. This function is provided
+> set to `true`. Note that $x$ and $y$ must be reduced. This function is provided
 > for performance reasons as it saves allocating a new object for the result and
 > eliminates associated garbage collection.
 """
@@ -1067,7 +1069,7 @@ promote_rule(::Type{nf_elem}, ::Type{fmpq_poly}) = nf_elem
 @doc Markdown.doc"""
     (a::AnticNumberField)()
 
-> Return an empty (0) element.    
+> Return an empty (0) element.
 """
 function (a::AnticNumberField)()
    z = nf_elem(a)
@@ -1136,10 +1138,10 @@ end
 #
 ###############################################################################
 
-function rand(K::AnticNumberField, r::UnitRange{Int64})
+function rand(rng::AbstractRNG, K::AnticNumberField, r::UnitRange{Int})
    R = parent(K.pol)
    n = degree(K.pol)
-   return K(rand(R, (n-1):(n-1), r)) 
+   return K(rand(rng, R, (n-1):(n-1), r))
 end
 
 ###############################################################################
@@ -1208,4 +1210,3 @@ end
 function show_maxreal(io::IO, a::AnticNumberField)
   print(io, "Maximal real subfield of cyclotomic field of order $(get_special(a, :maxreal))")
 end
-

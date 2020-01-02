@@ -15,7 +15,7 @@ The features of Nemo so far include:
   - Finite fields (prime and non-prime order)
   - Number field arithmetic
   - Arbitrary precision real and complex balls
-  - Univariate polynomials and matrices over the above
+  - Univariate and multivariate polynomials and matrices over the above
 
 Nemo depends on AbstractAlgebra.jl which provides Nemo with generic routines for:
 
@@ -139,3 +139,9 @@ Nemo depends on various C libraries which are installed using binaries by defaul
 Building from source can be enabled by setting the environment variable `NEMO_SOURCE_BUILD=1`
 and then doing `Pkg.build("Nemo")` or `Pkg.add("Nemo")` depending on whether Nemo
 was already installed.
+
+## Experimental threading support for flint
+
+Enabling a threaded version of flint can be done by setting the evironment
+variable `NEMO_THREADED=1`. To set the actual number of threads, use
+`Nemo.flint_set_num_threads($numberofthreads)`.

@@ -278,6 +278,7 @@ end
 
 function divexact(x::gfp_elem, y::gfp_elem)
    check_parent(x, y)
+   y == 0 && throw(DivideError())
    R = parent(x)
    yinv = ccall((:n_invmod, :libflint), UInt, (UInt, UInt),
            y.data, R.n)
@@ -326,13 +327,13 @@ end
 #
 ###############################################################################
 
-function rand(R::GaloisField)
-   n = rand(UInt(0):R.n - 1)
+function rand(rng::AbstractRNG, R::GaloisField)
+   n = rand(rng, UInt(0):R.n - 1)
    return gfp_elem(n, R)
 end
 
-function rand(R::GaloisField, b::UnitRange{Int64})
-   n = rand(b)
+function rand(rng::AbstractRNG, R::GaloisField, b::UnitRange{Int})
+   n = rand(rng, b)
    return R(n)
 end
 
@@ -400,41 +401,19 @@ end
 
 ###############################################################################
 #
-#   gfp_elem constructor
+#   GF constructor
 #
 ###############################################################################
 
 function GF(n::Int; cached::Bool=true)
-   (n <= 0) && throw(DomainError("Characteristic must be positive: $n"))
+   (n <= 0) && throw(DomainError(n, "Characteristic must be positive"))
    un = UInt(n)
-   !is_prime(un) && throw(DomainError("Characteristic must be prime: $n"))
+   !isprime(un) && throw(DomainError(n, "Characteristic must be prime"))
    return GaloisField(un, cached)
 end
 
 function GF(n::UInt; cached::Bool=true)
    un = UInt(n)
-   !is_prime(un) && throw(DomainError("Characteristic must be prime: $n"))
+   !isprime(un) && throw(DomainError(n, "Characteristic must be prime"))
    return GaloisField(un, cached)
 end
-
-function GF(n::fmpz; cached::Bool=true)
-   return ResidueField(FlintZZ, n, cached = cached)
-end
-
-################################################################################
-#
-#   Characteristic & order
-#
-################################################################################
-
-@doc Markdown.doc"""
-    characteristic(F::Generic.ResField{fmpz}) -> fmpz
-> Return the characteristic of the given Galois field.
-"""
-characteristic(F::Generic.ResField{fmpz}) = modulus(F)
-
-@doc Markdown.doc"""
-    order(F::Generic.ResField{fmpz})-> fmpz
-> Return the order, i.e. the number of elements in, the given Galois field.
-"""
-order(F::Generic.ResField{fmpz}) = modulus(F)

@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-export gfp_mat, GFPMatSpace 
+export gfp_mat, GFPMatSpace
 
 ################################################################################
 #
@@ -16,23 +16,21 @@ parent_type(::Type{gfp_mat}) = GFPMatSpace
 
 elem_type(::Type{GFPMatSpace}) = gfp_mat
 
+dense_matrix_type(::Type{gfp_elem}) = gfp_mat
+
 ###############################################################################
 #
-#   Similar
+#   Similar & zero
 #
 ###############################################################################
 
-function similar(x::gfp_mat)
-   z = gfp_mat(nrows(x), ncols(x), x.n)
-   z.base_ring = x.base_ring
+function similar(::gfp_mat, R::GaloisField, r::Int, c::Int)
+   z = gfp_mat(r, c, R.n)
+   z.base_ring = R
    return z
 end
 
-function similar(x::gfp_mat, r::Int, c::Int)
-   z = gfp_mat(r, c, x.n)
-   z.base_ring = x.base_ring
-   return z
-end
+zero(m::gfp_mat, R::GaloisField, r::Int, c::Int) = similar(m, R, r, c)
 
 ################################################################################
 #
@@ -40,13 +38,17 @@ end
 #
 ################################################################################
 
-set_entry!(a::gfp_mat, i::Int, j::Int, u::gfp_elem) =
-        set_entry!(a, i, j, u.data)
+@inline function getindex(a::gfp_mat, i::Int, j::Int)
+  @boundscheck Generic._checkbounds(a, i, j)
+  u = ccall((:nmod_mat_get_entry, :libflint), UInt,
+            (Ref{gfp_mat}, Int, Int), a, i - 1 , j - 1)
+  return gfp_elem(u, base_ring(a)) # no reduction needed
+end
 
 @inline function setindex!(a::gfp_mat, u::gfp_elem, i::Int, j::Int)
   @boundscheck Generic._checkbounds(a, i, j)
   (base_ring(a) != parent(u)) && error("Parent objects must coincide")
-  set_entry!(a, i, j, u.data)
+  setindex_raw!(a, u.data, i, j) # no reduction necessary
 end
 
 function deepcopy_internal(a::gfp_mat, dict::IdDict)
@@ -68,22 +70,10 @@ base_ring(a::GFPMatSpace) = a.base_ring
 zero(a::GFPMatSpace) = a()
 
 function one(a::GFPMatSpace)
-  (nrows(a) != ncols(a)) && error("Matrices must be quadratic")
+  (nrows(a) != ncols(a)) && error("Matrices must be square")
   z = a()
   ccall((:nmod_mat_one, :libflint), Nothing, (Ref{gfp_mat}, ), z)
   return z
-end
-
-################################################################################
-#
-#  AbstractString I/O
-#
-################################################################################
-
-function show(io::IO, a::GFPMatSpace)
-   print(io, "Matrix Space of ")
-   print(io, nrows(a), " rows and ", ncols(a), " columns over ")
-   print(io, a.base_ring)
 end
 
 ################################################################################
@@ -237,7 +227,7 @@ function lift(a::gfp_mat)
   z.base_ring = FlintZZ
   ccall((:fmpz_mat_set_nmod_mat, :libflint), Nothing,
           (Ref{fmpz_mat}, Ref{gfp_mat}), z, a)
-  return z 
+  return z
 end
 
 ################################################################################
@@ -341,9 +331,9 @@ function (a::GFPMatSpace)(arr::AbstractArray{BigInt, 2}, transpose::Bool = false
   return z
 end
 
-function (a::GFPMatSpace)(arr::AbstractArray{BigInt, 1}, transpose::Bool = false)
+function (a::GFPMatSpace)(arr::AbstractArray{BigInt, 1})
   _check_dim(nrows(a), ncols(a), arr)
-  z = gfp_mat(nrows(a), ncols(a), a.n, arr, transpose)
+  z = gfp_mat(nrows(a), ncols(a), a.n, arr)
   z.base_ring = a.base_ring
   return z
 end
@@ -355,9 +345,9 @@ function (a::GFPMatSpace)(arr::AbstractArray{fmpz, 2}, transpose::Bool = false)
   return z
 end
 
-function (a::GFPMatSpace)(arr::AbstractArray{fmpz, 1}, transpose::Bool = false)
+function (a::GFPMatSpace)(arr::AbstractArray{fmpz, 1})
   _check_dim(nrows(a), ncols(a), arr)
-  z = gfp_mat(nrows(a), ncols(a), a.n, arr, transpose)
+  z = gfp_mat(nrows(a), ncols(a), a.n, arr)
   z.base_ring = a.base_ring
   return z
 end
@@ -369,9 +359,9 @@ function (a::GFPMatSpace)(arr::AbstractArray{Int, 2}, transpose::Bool = false)
   return z
 end
 
-function (a::GFPMatSpace)(arr::AbstractArray{Int, 1}, transpose::Bool = false)
+function (a::GFPMatSpace)(arr::AbstractArray{Int, 1})
   _check_dim(nrows(a), ncols(a), arr)
-  z = gfp_mat(nrows(a), ncols(a), a.n, arr, transpose)
+  z = gfp_mat(nrows(a), ncols(a), a.n, arr)
   z.base_ring = a.base_ring
   return z
 end
@@ -384,10 +374,10 @@ function (a::GFPMatSpace)(arr::AbstractArray{gfp_elem, 2}, transpose::Bool = fal
   return z
 end
 
-function (a::GFPMatSpace)(arr::AbstractArray{gfp_elem, 1}, transpose::Bool = false)
+function (a::GFPMatSpace)(arr::AbstractArray{gfp_elem, 1})
   _check_dim(nrows(a), ncols(a), arr)
   (length(arr) > 0 && (base_ring(a) != parent(arr[1]))) && error("Elements must have same base ring")
-  z = gfp_mat(nrows(a), ncols(a), a.n, arr, transpose)
+  z = gfp_mat(nrows(a), ncols(a), a.n, arr)
   z.base_ring = a.base_ring
   return z
 end
@@ -457,4 +447,3 @@ end
 function MatrixSpace(R::GaloisField, r::Int, c::Int, cached::Bool = true)
   GFPMatSpace(R, r, c, cached)
 end
-

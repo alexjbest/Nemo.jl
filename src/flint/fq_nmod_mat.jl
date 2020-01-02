@@ -4,9 +4,9 @@
 #
 ################################################################################
 
-export fq_nmod_mat, FqNmodMatSpace, getindex, setindex!, set_entry!, deepcopy, rows, 
-       cols, parent, base_ring, zero, one, show, transpose,
-       transpose!, rref, rref!, tr, det, rank, inv, solve, 
+export fq_nmod_mat, FqNmodMatSpace, getindex, setindex!, deepcopy,
+       parent, base_ring, zero, one, show, transpose,
+       transpose!, rref, rref!, tr, det, rank, inv, solve,
        sub, hcat, vcat, Array, lift, lift!, MatrixSpace, check_parent,
        howell_form, howell_form!, strong_echelon_form, strong_echelon_form!
 
@@ -20,6 +20,8 @@ parent_type(::Type{fq_nmod_mat}) = FqNmodMatSpace
 
 elem_type(::Type{FqNmodMatSpace}) = fq_nmod_mat
 
+dense_matrix_type(::Type{fq_nmod}) = fq_nmod_mat
+
 function check_parent(x::fq_nmod_mat, y::fq_nmod_mat)
    fl = base_ring(x) != base_ring(y)
    fl && throw && error("Residue rings must be equal")
@@ -31,19 +33,12 @@ end
 
 ###############################################################################
 #
-#   Similar
+#   Similar & zero
 #
 ###############################################################################
 
-function similar(x::fq_nmod_mat)
-   z = fq_nmod_mat(nrows(x), ncols(x), base_ring(x))
-   return z
-end
-
-function similar(x::fq_nmod_mat, r::Int, c::Int)
-   z = fq_nmod_mat(r, c, base_ring(x))
-   return z
-end
+similar(::fq_nmod_mat, R::FqNmodFiniteField, r::Int, c::Int) = fq_nmod_mat(r, c, R)
+zero(::fq_nmod_mat, R::FqNmodFiniteField, r::Int, c::Int) = fq_nmod_mat(r, c, R)
 
 ################################################################################
 #
@@ -106,7 +101,7 @@ base_ring(a::fq_nmod_mat) = a.base_ring
 zero(a::FqNmodMatSpace) = a()
 
 function one(a::FqNmodMatSpace)
-  (nrows(a) != ncols(a)) && error("Matrices must be quadratic")
+  (nrows(a) != ncols(a)) && error("Matrices must be square")
   return a(one(base_ring(a)))
 end
 
@@ -114,39 +109,6 @@ function iszero(a::fq_nmod_mat)
    r = ccall((:fq_nmod_mat_is_zero, :libflint), Cint,
              (Ref{fq_nmod_mat}, Ref{FqNmodFiniteField}), a, base_ring(a))
   return Bool(r)
-end
-
-################################################################################
-#
-#  AbstractString I/O
-#
-################################################################################
-
-function show(io::IO, a::FqNmodMatSpace)
-   print(io, "Matrix Space of ")
-   print(io, nrows(a), " rows and ", ncols(a), " columns over ")
-   print(io, a.base_ring)
-end
-
-function show(io::IO, a::fq_nmod_mat)
-   rows = a.r
-   cols = a.c
-   if rows*cols == 0
-      print(io, "$rows by $cols matrix")
-   end
-   for i = 1:rows
-      print(io, "[")
-      for j = 1:cols
-         print(io, a[i, j])
-         if j != cols
-            print(io, " ")
-         end
-      end
-      print(io, "]")
-      if i != rows
-         println(io, "")
-      end
-   end
 end
 
 ################################################################################
@@ -182,7 +144,7 @@ function transpose(a::fq_nmod_mat)
    return z
 end
 
-# There is no transpose for fq_nmod_mat 
+# There is no transpose for fq_nmod_mat
 #function transpose(a::fq_nmod_mat)
 #  z = FqNmodMatSpace(base_ring(a), ncols(a), nrows(a))()
 #  ccall((:fq_nmod_mat_transpose, :libflint), Nothing,
@@ -228,21 +190,21 @@ function swap_cols(x::fq_nmod_mat, i::Int, j::Int)
    return swap_cols!(y, i, j)
 end
 
-function invert_rows!(x::fq_nmod_mat)
+function reverse_rows!(x::fq_nmod_mat)
    ccall((:fq_nmod_mat_invert_rows, :libflint), Nothing,
          (Ref{fq_nmod_mat}, Ptr{Nothing}, Ref{FqNmodFiniteField}), x, C_NULL, base_ring(x))
    return x
 end
 
-invert_rows(x::fq_nmod_mat) = invert_rows!(deepcopy(x))
+reverse_rows(x::fq_nmod_mat) = reverse_rows!(deepcopy(x))
 
-function invert_cols!(x::fq_nmod_mat)
+function reverse_cols!(x::fq_nmod_mat)
    ccall((:fq_nmod_mat_invert_cols, :libflint), Nothing,
          (Ref{fq_nmod_mat}, Ptr{Nothing}, Ref{FqNmodFiniteField}), x, C_NULL, base_ring(x))
    return x
 end
 
-invert_cols(x::fq_nmod_mat) = invert_cols!(deepcopy(x))
+reverse_cols(x::fq_nmod_mat) = reverse_cols!(deepcopy(x))
 
 ################################################################################
 #
@@ -337,7 +299,7 @@ end
 *(x::fq_nmod, y::fq_nmod_mat) = y * x
 
 function *(x::fq_nmod_mat, y::fmpz)
-   return base_ring(x)(y) * x 
+   return base_ring(x)(y) * x
 end
 
 *(x::fmpz, y::fq_nmod_mat) = y * x
@@ -470,7 +432,7 @@ end
 #
 ################################################################################
 
-function lu!(P::Generic.perm, x::fq_nmod_mat)
+function lu!(P::Generic.Perm, x::fq_nmod_mat)
    rank = Int(ccall((:fq_nmod_mat_lu, :libflint), Cint,
                 (Ptr{Int}, Ref{fq_nmod_mat}, Cint, Ref{FqNmodFiniteField}),
                 P.d, x, 0, base_ring(x)))
@@ -563,7 +525,7 @@ function sub(x::fq_nmod_mat, r::UnitRange{Int}, c::UnitRange{Int})
 end
 
 getindex(x::fq_nmod_mat, r::UnitRange{Int}, c::UnitRange{Int}) = sub(x, r, c)
- 
+
 ################################################################################
 #
 #  Concatenation

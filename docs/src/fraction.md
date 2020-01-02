@@ -69,6 +69,10 @@ abs(::fmpq)
 ```
 
 ```@docs
+sign(::fmpq)
+```
+
+```@docs
 height(::fmpq)
 ```
 
@@ -94,6 +98,11 @@ isless(::Integer, ::fmpq)
 isless(::fmpq, ::Integer)
 isless(::fmpq, ::fmpz)
 isless(::fmpz, ::fmpq)
+```
+
+```@docs
+floor(::fmpq)
+ceil(::fmpq)
 ```
 
 **Examples**

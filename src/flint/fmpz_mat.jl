@@ -4,14 +4,14 @@
 #
 ###############################################################################
 
-export fmpz_mat, FmpzMatSpace, getindex, getindex!, setindex!, rows, cols,
+export fmpz_mat, FmpzMatSpace, getindex, getindex!, setindex!,
        charpoly, det, det_divisor, det_given_divisor, gram, hadamard,
-       ishadamard, hnf, ishnf, hnf_with_transform, hnf_modular, lll, lll!, 
+       ishadamard, hnf, ishnf, hnf_with_transform, hnf_modular, lll, lll!,
        lll_ctx, lll_gram, lll_gram!, lll_with_transform,
        lll_gram_with_transform, lll_with_removal, lll_with_removal_transform,
        nullspace, rank, rref, reduce_mod, similar, snf, snf_diagonal, issnf,
        solve, solve_rational, cansolve, cansolve_with_nullspace, solve_dixon,
-       tr, transpose, content, hcat, vcat, addmul!, zero!, window, pseudo_inv,
+       tr, transpose, content, hcat, vcat, addmul!, zero!, pseudo_inv,
        hnf_modular_eldiv, nullspace_right_rational
 
 ###############################################################################
@@ -26,6 +26,8 @@ parent_type(::Type{fmpz_mat}) = FmpzMatSpace
 
 base_ring(a::FmpzMatSpace) = a.base_ring
 
+dense_matrix_type(::Type{fmpz}) = fmpz_mat
+
 parent(a::fmpz_mat, cached::Bool = true) =
     FmpzMatSpace(nrows(a), ncols(a), cached)
 
@@ -37,21 +39,17 @@ end
 
 ###############################################################################
 #
-#   Similar
+#   similar & zero
 #
 ###############################################################################
 
-function similar(x::fmpz_mat)
-   z = fmpz_mat(nrows(x), ncols(x))
-   z.base_ring = x.base_ring
+function similar(::fmpz_mat, R::FlintIntegerRing, r::Int, c::Int)
+   z = fmpz_mat(r, c)
+   z.base_ring = R
    return z
 end
 
-function similar(x::fmpz_mat, r::Int, c::Int)
-   z = fmpz_mat(r, c)
-   z.base_ring = x.base_ring
-   return z
-end
+zero(m::fmpz_mat, R::FlintIntegerRing, r::Int, c::Int) = similar(m, R, r, c)
 
 ###############################################################################
 #
@@ -60,20 +58,20 @@ end
 ###############################################################################
 
 function _checkrange_or_empty(l::Int, start::Int, stop::Int)
-   (stop < start) || 
+   (stop < start) ||
    (Generic._checkbounds(l, start) &&
-    Generic._checkbounds(l, stop)) 
+    Generic._checkbounds(l, stop))
 end
 
 function Base.view(x::fmpz_mat, r1::Int, c1::Int, r2::Int, c2::Int)
-   
+
    _checkrange_or_empty(nrows(x), r1, r2) ||
       Base.throw_boundserror(x, (r1:r2, c1:c2))
 
    _checkrange_or_empty(ncols(x), c1, c2) ||
       Base.throw_boundserror(x, (r1:r2, c1:c2))
 
-   if (r1 > r2) 
+   if (r1 > r2)
      r1 = 1
      r2 = 0
    end
@@ -81,7 +79,7 @@ function Base.view(x::fmpz_mat, r1::Int, c1::Int, r2::Int, c2::Int)
      c1 = 1
      c2 = 0
    end
-       
+
    b = fmpz_mat()
    b.base_ring = FlintZZ
    b.view_parent = x
@@ -193,33 +191,6 @@ canonical_unit(a::fmpz_mat) = canonical_unit(a[1, 1])
 #
 ###############################################################################
 
-function show(io::IO, a::FmpzMatSpace)
-   print(io, "Matrix Space of ")
-   print(io, nrows(a), " rows and ", ncols(a), " columns over ")
-   print(io, "Integer Ring")
-end
-
-function show(io::IO, a::fmpz_mat)
-   r = nrows(a)
-   c = ncols(a)
-   if r*c == 0
-      print(io, "$r by $c matrix")
-   end
-   for i = 1:r
-      print(io, "[")
-      for j = 1:c
-         print(io, a[i, j])
-         if j != c
-            print(io, " ")
-         end
-      end
-      print(io, "]")
-      if i != r
-         println(io, "")
-      end
-   end
-end
-
 show_minus_one(::Type{fmpz_mat}) = show_minus_one(fmpz)
 
 ###############################################################################
@@ -278,21 +249,21 @@ function swap_cols(x::fmpz_mat, i::Int, j::Int)
    return swap_cols!(y, i, j)
 end
 
-function invert_rows!(x::fmpz_mat)
+function reverse_rows!(x::fmpz_mat)
    ccall((:fmpz_mat_invert_rows, :libflint), Nothing,
          (Ref{fmpz_mat}, Ptr{Nothing}), x, C_NULL)
    return x
 end
 
-invert_rows(x::fmpz_mat) = invert_rows!(deepcopy(x))
+reverse_rows(x::fmpz_mat) = reverse_rows!(deepcopy(x))
 
-function invert_cols!(x::fmpz_mat)
+function reverse_cols!(x::fmpz_mat)
    ccall((:fmpz_mat_invert_cols, :libflint), Nothing,
          (Ref{fmpz_mat}, Ptr{Nothing}), x, C_NULL)
    return x
 end
 
-invert_cols(x::fmpz_mat) = invert_cols!(deepcopy(x))
+reverse_cols(x::fmpz_mat) = reverse_cols!(deepcopy(x))
 
 ###############################################################################
 #
@@ -410,7 +381,7 @@ end
 > Return $2^yx$.
 """
 function <<(x::fmpz_mat, y::Int)
-   y < 0 && throw(DomainError("Exponent must be non-negative: $y"))
+   y < 0 && throw(DomainError(y, "Exponent must be non-negative"))
    z = similar(x)
    ccall((:fmpz_mat_scalar_mul_2exp, :libflint), Nothing,
                 (Ref{fmpz_mat}, Ref{fmpz_mat}, Int),
@@ -423,7 +394,7 @@ end
 > Return $x/2^y$ where rounding is towards zero.
 """
 function >>(x::fmpz_mat, y::Int)
-   y < 0 && throw(DomainError("Exponent must be non-negative: $y"))
+   y < 0 && throw(DomainError(y, "Exponent must be non-negative"))
    z = similar(x)
    ccall((:fmpz_mat_scalar_tdiv_q_2exp, :libflint), Nothing,
                 (Ref{fmpz_mat}, Ref{fmpz_mat}, Int),
@@ -438,7 +409,7 @@ end
 ###############################################################################
 
 function ^(x::fmpz_mat, y::Int)
-   y < 0 && throw(DomainError("Exponent must be non-negative: $y"))
+   y < 0 && throw(DomainError(y, "Exponent must be non-negative"))
    nrows(x) != ncols(x) && error("Incompatible matrix dimensions")
    z = similar(x)
    ccall((:fmpz_mat_pow, :libflint), Nothing,

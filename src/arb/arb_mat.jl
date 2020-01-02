@@ -4,28 +4,24 @@
 #
 ###############################################################################
 
-export zero, one, deepcopy, -, transpose, +, *, &, ==, !=, strongequal,
+export zero, one, deepcopy, -, transpose, +, *, &, ==, !=,
        overlaps, contains, inv, divexact, charpoly, det, lu, lu!, solve,
        solve!, solve_lu_precomp, solve_lu_precomp!, swap_rows, swap_rows!,
        bound_inf_norm
 
 ###############################################################################
 #
-#   Similar
+#   Similar & zero
 #
 ###############################################################################
 
-function similar(x::arb_mat)
-   z = arb_mat(nrows(x), ncols(x))
-   z.base_ring = x.base_ring
+function similar(::arb_mat, R::ArbField, r::Int, c::Int)
+   z = arb_mat(r, c)
+   z.base_ring = R
    return z
 end
 
-function similar(x::arb_mat, r::Int, c::Int)
-   z = arb_mat(r, c)
-   z.base_ring = x.base_ring
-   return z
-end
+zero(m::arb_mat, R::ArbField, r::Int, c::Int) = zero(m, R, r, c)
 
 ###############################################################################
 #
@@ -43,6 +39,8 @@ base_ring(a::arb_mat) = a.base_ring
 
 parent(x::arb_mat, cached::Bool = true) =
       MatrixSpace(base_ring(x), nrows(x), ncols(x))
+
+dense_matrix_type(::Type{arb}) = arb_mat
 
 prec(x::ArbMatSpace) = prec(x.base_ring)
 
@@ -116,39 +114,6 @@ function deepcopy_internal(x::arb_mat, dict::IdDict)
   ccall((:arb_mat_set, :libarb), Nothing, (Ref{arb_mat}, Ref{arb_mat}), z, x)
   z.base_ring = x.base_ring
   return z
-end
-
-###############################################################################
-#
-#   String I/O
-#
-###############################################################################
-
-function show(io::IO, a::ArbMatSpace)
-   print(io, "Matrix Space of ")
-   print(io, nrows(a), " rows and ", ncols(a), " columns over ")
-   print(io, base_ring(a))
-end
-
-function show(io::IO, a::arb_mat)
-   r = nrows(a)
-   c = ncols(a)
-   if r*c == 0
-      print(io, "$r by $c matrix")
-   end
-   for i = 1:r
-      print(io, "[")
-      for j = 1:c
-         print(io, a[i, j])
-         if j != c
-            print(io, " ")
-         end
-      end
-      print(io, "]")
-      if i != r
-         println(io, "")
-      end
-   end
 end
 
 ################################################################################
@@ -537,7 +502,7 @@ end
 #
 ###############################################################################
 
-function lu!(P::Generic.perm, x::arb_mat)
+function lu!(P::Generic.Perm, x::arb_mat)
   ncols(x) != nrows(x) && error("Matrix must be square")
   parent(P).n != nrows(x) && error("Permutation does not match matrix")
   P.d .-= 1
@@ -588,7 +553,7 @@ function solve(x::arb_mat, y::arb_mat)
   return z
 end
 
-function solve_lu_precomp!(z::arb_mat, P::Generic.perm, LU::arb_mat, y::arb_mat)
+function solve_lu_precomp!(z::arb_mat, P::Generic.Perm, LU::arb_mat, y::arb_mat)
   Q = inv(P)
   ccall((:arb_mat_solve_lu_precomp, :libarb), Nothing,
               (Ref{arb_mat}, Ptr{Int}, Ref{arb_mat}, Ref{arb_mat}, Int),
@@ -596,7 +561,7 @@ function solve_lu_precomp!(z::arb_mat, P::Generic.perm, LU::arb_mat, y::arb_mat)
   nothing
 end
 
-function solve_lu_precomp(P::Generic.perm, LU::arb_mat, y::arb_mat)
+function solve_lu_precomp(P::Generic.Perm, LU::arb_mat, y::arb_mat)
   ncols(LU) != nrows(y) && error("Matrix dimensions are wrong")
   z = similar(y)
   solve_lu_precomp!(z, P, LU, y)

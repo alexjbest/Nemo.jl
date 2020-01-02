@@ -20,6 +20,8 @@ base_ring(a::FmpqMatSpace) = a.base_ring
 
 base_ring(a::fmpq_mat) = a.base_ring
 
+dense_matrix_type(::Type{fmpq}) = fmpq_mat
+
 parent(a::fmpq_mat, cached::Bool = true) =
       FmpqMatSpace(nrows(a), ncols(a), cached)
 
@@ -31,21 +33,17 @@ end
 
 ###############################################################################
 #
-#   Similar
+#   Similar & zero
 #
 ###############################################################################
 
-function similar(x::fmpq_mat)
-   z = fmpq_mat(nrows(x), ncols(x))
-   z.base_ring = x.base_ring
+function similar(::fmpq_mat, R::FlintRationalField, r::Int, c::Int)
+   z = fmpq_mat(r, c)
+   z.base_ring = R
    return z
 end
 
-function similar(x::fmpq_mat, r::Int, c::Int)
-   z = fmpq_mat(r, c)
-   z.base_ring = x.base_ring
-   return z
-end
+zero(m::fmpq_mat, R::FlintRationalField, r::Int, c::Int) = similar(m, R, r, c)
 
 ###############################################################################
 #
@@ -199,33 +197,6 @@ canonical_unit(a::fmpq_mat) = canonical_unit(a[1, 1])
 #
 ###############################################################################
 
-function show(io::IO, a::FmpqMatSpace)
-   print(io, "Matrix Space of ")
-   print(io, nrows(a), " rows and ", ncols(a), " columns over ")
-   print(io, "Rational Field")
-end
-
-function show(io::IO, a::fmpq_mat)
-   r = nrows(a)
-   c = ncols(a)
-   if r*c == 0
-      print(io, "$r by $c matrix")
-   end
-   for i = 1:r
-      print(io, "[")
-      for j = 1:c
-         print(io, a[i, j])
-         if j != c
-            print(io, " ")
-         end
-      end
-      print(io, "]")
-      if i != r
-         println(io, "")
-      end
-   end
-end
-
 show_minus_one(::Type{fmpq_mat}) = show_minus_one(fmpq)
 
 ###############################################################################
@@ -284,21 +255,21 @@ function swap_cols(x::fmpq_mat, i::Int, j::Int)
    return swap_cols!(y, i, j)
 end
 
-function invert_rows!(x::fmpq_mat)
+function reverse_rows!(x::fmpq_mat)
    ccall((:fmpq_mat_invert_rows, :libflint), Nothing,
          (Ref{fmpq_mat}, Ptr{Nothing}), x, C_NULL)
    return x
 end
 
-invert_rows(x::fmpq_mat) = invert_rows!(deepcopy(x))
+reverse_rows(x::fmpq_mat) = reverse_rows!(deepcopy(x))
 
-function invert_cols!(x::fmpq_mat)
+function reverse_cols!(x::fmpq_mat)
    ccall((:fmpq_mat_invert_cols, :libflint), Nothing,
          (Ref{fmpq_mat}, Ptr{Nothing}), x, C_NULL)
    return x
 end
 
-invert_cols(x::fmpq_mat) = invert_cols!(deepcopy(x))
+reverse_cols(x::fmpq_mat) = reverse_cols!(deepcopy(x))
 
 ###############################################################################
 #
@@ -643,7 +614,7 @@ function solve(a::fmpq_mat, b::fmpq_mat)
    nrows(a) != ncols(a) && error("Not a square matrix in solve")
    nrows(b) != nrows(a) && error("Incompatible dimensions in solve")
    z = similar(b)
-   nonsing = ccall((:fmpq_mat_solve_fraction_free, :libflint), Bool,
+   nonsing = ccall((:fmpq_mat_solve, :libflint), Bool,
       (Ref{fmpq_mat}, Ref{fmpq_mat}, Ref{fmpq_mat}), z, a, b)
    !nonsing && error("Singular matrix in solve")
    return z
@@ -707,7 +678,7 @@ end
 ###############################################################################
 
 function similarity!(z::fmpq_mat, r::Int, d::fmpq)
-   ccall((:fmpq_mat_similarity, :libflint), Nothing, 
+   ccall((:fmpq_mat_similarity, :libflint), Nothing,
          (Ref{fmpq_mat}, Int, Ref{fmpq}), z, r - 1, d)
 end
 

@@ -1,8 +1,6 @@
 RR = ArbField(64)
 
-function test_arb_mat_constructors()
-   print("arb_mat.constructors...")
- 
+@testset "arb_mat.constructors..." begin
    S = MatrixSpace(RR, 3, 3)
    R = MatrixSpace(ZZ, 3, 3)
 
@@ -41,7 +39,7 @@ function test_arb_mat_constructors()
    o = S([1.0 2.0 3.0; 1.0 1.0 1.0; 2.0 3.1 4.1])
 
    @test isa(o, MatElem)
-   
+
    p = S(BigFloat[1.0 2.0 3.0; 1.0 1.0 1.0; 2.0 3.1 4.1])
 
    @test isa(p, MatElem)
@@ -93,24 +91,44 @@ function test_arb_mat_constructors()
    @test a in [a, b]
    @test a in [b, a]
    @test !(a in [b])
-
-   println("PASS")
 end
 
-function test_arb_mat_printing()
-   print("arb_mat.printing...")
- 
+@testset "arb_mat.similar..." begin
+   S = MatrixSpace(RR, 3, 3)
+   s = S(fmpz(3))
+
+   t = similar(s)
+   @test t isa arb_mat
+   @test size(t) == size(s)
+
+   t = similar(s, 2, 3)
+   @test t isa arb_mat
+   @test size(t) == (2, 3)
+
+   for (R, M) in ring_to_mat
+      t = similar(s, R)
+      @test size(t) == size(s)
+
+      t = similar(s, R, 2, 3)
+      @test size(t) == (2, 3)
+   end
+
+   # issue #651
+   m = one(Generic.MatSpace{arb}(RR, 2, 2, false))
+   for n = (m, -m, m*m, m+m, 2m)
+      @test n isa Generic.MatSpaceElem{arb}
+   end
+end
+
+@testset "arb_mat.printing..." begin
    S = MatrixSpace(RR, 3, 3)
    f = S(fmpz(3))
 
-   @test string(f) == "[3.0000000000000000000 0 0]\n[0 3.0000000000000000000 0]\n[0 0 3.0000000000000000000]"
-
-   println("PASS")
+   # test that default Julia printing is not used
+   @test !occursin(string(typeof(f)), string(f))
 end
 
-function test_arb_mat_manipulation()
-   print("arb_mat.manipulation...")
-
+@testset "arb_mat.manipulation..." begin
    S = MatrixSpace(RR, 3, 3)
    A = S([fmpz(2) 3 5; 1 4 7; 9 6 3])
    B = S([fmpz(1) 4 7; 9 6 7; 4 3 3])
@@ -130,13 +148,9 @@ function test_arb_mat_manipulation()
    @test ncols(B) == 3
 
    @test deepcopy(A) == A
-
-   println("PASS")
 end
 
-function test_arb_mat_unary_ops()
-   print("arb_mat.unary_ops...")
-
+@testset "arb_mat.unary_ops..." begin
    S = MatrixSpace(RR, 3, 3)
    R = MatrixSpace(ZZ, 3, 3)
 
@@ -144,13 +158,9 @@ function test_arb_mat_unary_ops()
    B = R([(-2) (-3) (-5); (-1) (-4) (-7); (-9) (-6) (-3)])
 
    @test contains(-A, B)
-
-   println("PASS")
 end
 
-function test_arb_mat_transpose()
-   print("arb_mat.transpose...")
-
+@testset "arb_mat.transpose..." begin
    S = MatrixSpace(RR, 3, 3)
    T = MatrixSpace(ZZ, 3, 3)
 
@@ -163,13 +173,9 @@ function test_arb_mat_transpose()
    C = transpose(A)*A
 
    @test overlaps(transpose(C), C)
-
-   println("PASS")
 end
 
-function test_arb_mat_binary_ops()
-   print("arb_mat.binary_ops...")
-
+@testset "arb_mat.binary_ops..." begin
    S = MatrixSpace(RR, 3, 3)
    R = MatrixSpace(ZZ, 3, 3)
 
@@ -181,13 +187,9 @@ function test_arb_mat_binary_ops()
    @test contains(A - B, R([1 (-1) (-2); (-8) (-2) 0; 5 3 0]))
 
    @test contains(A*B, R([49 41 50; 65 49 56; 75 81 114]))
-
-   println("PASS")
 end
 
-function test_arb_mat_adhoc_binary()
-   print("arb_mat.adhoc_binary...")
-
+@testset "arb_mat.adhoc_binary..." begin
    S = MatrixSpace(RR, 3, 3)
    R = MatrixSpace(ZZ, 3, 3)
    T = MatrixSpace(QQ, 3, 3)
@@ -223,13 +225,9 @@ function test_arb_mat_adhoc_binary()
 
    @test contains(q*A, C*q)
    @test contains(A*q, C*q)
- 
-   println("PASS")
 end
 
-function test_arb_mat_shifting()
-   print("arb_mat.shifting...")
-
+@testset "arb_mat.shifting..." begin
    S = MatrixSpace(RR, 3, 3)
    R = MatrixSpace(ZZ, 3, 3)
 
@@ -240,13 +238,9 @@ function test_arb_mat_shifting()
 
    @test overlaps(16*A, C)
    @test contains(C, 16*B)
-
-   println("PASS")
 end
 
-function test_arb_mat_comparison()
-   print("arb_mat.comparison...")
-
+@testset "arb_mat.comparison..." begin
    S = MatrixSpace(RR, 3, 3)
    R = MatrixSpace(ZZ, 3, 3)
 
@@ -262,17 +256,13 @@ function test_arb_mat_comparison()
    @test A == A
 
    @test A != B
-   
+
    @test overlaps(A, C)
 
    @test contains(C, A)
-   
-   println("PASS")
 end
 
-function test_arb_mat_adhoc_comparison()
-   print("arb_mat.adhoc_comparison...")
-
+@testset "arb_mat.adhoc_comparison..." begin
    S = MatrixSpace(RR, 3, 3)
    R = MatrixSpace(ZZ, 3, 3)
    T = MatrixSpace(QQ, 3, 3)
@@ -283,7 +273,7 @@ function test_arb_mat_adhoc_comparison()
 
    @test contains(A, B)
    @test contains(A, C)
-   
+
    @test S(12) == 12
    @test 12 == S(12)
    @test S(5) == fmpz(5)
@@ -291,13 +281,9 @@ function test_arb_mat_adhoc_comparison()
 
    @test A == B
    @test B == A
-
-   println("PASS")
 end
 
-function test_arb_mat_inversion()
-   print("arb_mat.inversion...")
-
+@testset "arb_mat.inversion..." begin
    S = MatrixSpace(RR, 3, 3)
    R = MatrixSpace(ZZ, 3, 3)
 
@@ -308,13 +294,9 @@ function test_arb_mat_inversion()
 
    @test overlaps(A*C, one(S))
    @test contains(C, B)
-
-   println("PASS")
 end
 
-function test_arb_mat_divexact()
-   print("arb_mat.divexact...")
-
+@testset "arb_mat.divexact..." begin
    S = MatrixSpace(RR, 3, 3)
    R = MatrixSpace(ZZ, 3, 3)
 
@@ -323,13 +305,9 @@ function test_arb_mat_divexact()
 
    @test overlaps(divexact(A, A), one(S))
    @test contains(divexact(one(S), A), B)
-
-   println("PASS")
 end
 
-function test_arb_mat_adhoc_divexact()
-   print("arb_mat.adhoc_divexact...")
-
+@testset "arb_mat.adhoc_divexact..." begin
    S = MatrixSpace(RR, 3, 3)
    R = MatrixSpace(ZZ, 3, 3)
 
@@ -339,13 +317,9 @@ function test_arb_mat_adhoc_divexact()
    @test contains(divexact(A, 3), B)
    @test contains(divexact(A, fmpz(3)), B)
    @test contains(divexact(A, RR("3.0 +/- 0.5")), B)
-
-   println("PASS")
 end
 
-function test_arb_mat_charpoly()
-   print("arb_mat.charpoly...")
-
+@testset "arb_mat.charpoly..." begin
    S = MatrixSpace(RR, 3, 3)
    R, x = PolynomialRing(RR, "x")
    ZZy, y = PolynomialRing(ZZ, "y")
@@ -359,13 +333,9 @@ function test_arb_mat_charpoly()
    g = charpoly(R, A)
 
    @test contains(g, f)
-
-   println("PASS")
 end
 
-function test_arb_mat_det()
-   print("arb_mat.det...")
-
+@testset "arb_mat.det..." begin
    S = MatrixSpace(RR, 3, 3)
 
    A = S(["2.0 +/- 0.1" "3.0 +/- 0.1" "5.0 +/- 0.1";
@@ -375,13 +345,9 @@ function test_arb_mat_det()
    d = det(A)
 
    @test contains(d, 24)
-
-   println("PASS")
 end
 
-function test_arb_mat_exp()
-   print("arb_mat.exp...")
-
+@testset "arb_mat.exp..." begin
    S = MatrixSpace(RR, 3, 3)
 
    A = S(["2.0 +/- 0.1" "0.0 +/- 0.1" "0.0 +/- 0.1";
@@ -393,13 +359,9 @@ function test_arb_mat_exp()
    C = exp(A)
 
    @test overlaps(B, C)
-
-   println("PASS")
 end
 
-function test_arb_mat_linear_solving()
-   print("arb_mat.linear_solving...")
-
+@testset "arb_mat.linear_solving..." begin
    S = MatrixSpace(RR, 3, 3)
    T = MatrixSpace(ZZ, 3, 3)
 
@@ -429,13 +391,9 @@ function test_arb_mat_linear_solving()
    @test overlaps(B*y, transpose(b))
 
    @test contains(transpose(y), ZZ[1 1 1])
-
-   println("PASS")
 end
 
-function test_arb_mat_bound_inf_norm()
-   print("arb_mat.bound_inf_norm...")
-
+@testset "arb_mat.bound_inf_norm..." begin
    S = MatrixSpace(RR, 3, 3)
 
    A = S([2 3 5; 1 4 7; 9 6 3])
@@ -447,29 +405,4 @@ function test_arb_mat_bound_inf_norm()
        @test A[i, j] <= c
      end
    end
-
-   println("PASS")
-end
-
-function test_arb_mat()
-   test_arb_mat_constructors()
-   test_arb_mat_printing()
-   test_arb_mat_manipulation()
-   test_arb_mat_unary_ops()
-   test_arb_mat_transpose()
-   test_arb_mat_binary_ops()
-   test_arb_mat_adhoc_binary()
-   test_arb_mat_shifting()
-   test_arb_mat_comparison()
-   test_arb_mat_adhoc_comparison()
-   test_arb_mat_inversion()
-   test_arb_mat_divexact()
-   test_arb_mat_adhoc_divexact()
-   test_arb_mat_charpoly()
-   test_arb_mat_det()
-   test_arb_mat_exp()
-   test_arb_mat_linear_solving()
-   test_arb_mat_bound_inf_norm()
-
-   println("")
 end

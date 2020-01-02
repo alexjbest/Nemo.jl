@@ -4,13 +4,13 @@
 #
 ################################################################################
 
-export NmodPolyRing, nmod_poly, parent, base_ring, elem_type, length, zero, 
+export NmodPolyRing, nmod_poly, parent, base_ring, elem_type, length, zero,
        one, gen, isgen, iszero, var, deepcopy, show, truncate, mullow, reverse,
-       shift_left, shift_right, divexact, divrem, rem, gcd, xgcd, resultant,
+       shift_left, shift_right, divexact, divrem, rem, gcd, resultant,
        evaluate, derivative, compose, interpolate, inflate, deflate, lift,
        isirreducible, issquarefree, factor, factor_squarefree,
        factor_distinct_deg, factor_shape, setcoeff!, canonical_unit,
-       add!, sub!, mul!, call, PolynomialRing, check_parent, gcdx, mod,
+       add!, sub!, mul!, PolynomialRing, check_parent, gcdx, mod,
        invmod, gcdinv, mulmod, powmod, zero!, one!
 
 ################################################################################
@@ -72,7 +72,7 @@ degree(x::T) where T <: Zmodn_poly = ccall((:nmod_poly_degree, :libflint), Int,
                                (Ref{T}, ), x)
 
 function coeff(x::T, n::Int) where T <: Zmodn_poly
-  n < 0 && throw(DomainError("Index must be non-negative: $n"))
+  n < 0 && throw(DomainError(n, "Index must be non-negative"))
   return base_ring(x)(ccall((:nmod_poly_get_coeff_ui, :libflint), UInt,
           (Ref{T}, Int), x, n))
 end
@@ -105,6 +105,8 @@ function deepcopy_internal(a::nmod_poly, dict::IdDict)
   z.parent = a.parent
   return z
 end
+
+characteristic(R::NmodPolyRing) = modulus(R)
 
 ################################################################################
 #
@@ -162,7 +164,7 @@ end
 function +(x::T, y::T) where T <: Zmodn_poly
   check_parent(x,y)
   z = parent(x)()
-  ccall((:nmod_poly_add, :libflint), Nothing, 
+  ccall((:nmod_poly_add, :libflint), Nothing,
           (Ref{T}, Ref{T},  Ref{T}), z, x, y)
   return z
 end
@@ -170,7 +172,7 @@ end
 function -(x::T, y::T) where T <: Zmodn_poly
   check_parent(x,y)
   z = parent(x)()
-  ccall((:nmod_poly_sub, :libflint), Nothing, 
+  ccall((:nmod_poly_sub, :libflint), Nothing,
           (Ref{T}, Ref{T},  Ref{T}), z, x, y)
   return z
 end
@@ -178,7 +180,7 @@ end
 function *(x::T, y::T) where T <: Zmodn_poly
   check_parent(x,y)
   z = parent(x)()
-  ccall((:nmod_poly_mul, :libflint), Nothing, 
+  ccall((:nmod_poly_mul, :libflint), Nothing,
           (Ref{T}, Ref{T},  Ref{T}), z, x, y)
   return z
 end
@@ -244,7 +246,7 @@ end
 
 +(x::T, y::Integer) where T <: Zmodn_poly = x + fmpz(y)
 
-+(x::Integer, y::T) where T <: Zmodn_poly = y + x 
++(x::Integer, y::T) where T <: Zmodn_poly = y + x
 
 function +(x::nmod_poly, y::nmod)
   (base_ring(x) != parent(y)) && error("Elements must have same parent")
@@ -323,13 +325,13 @@ function ==(x::nmod_poly, y::nmod)
   base_ring(x) != parent(y) && error("Incompatible base rings in comparison")
   if length(x) > 1
     return false
-  elseif length(x) == 1 
-    u = ccall((:nmod_poly_get_coeff_ui, :libflint), UInt, 
+  elseif length(x) == 1
+    u = ccall((:nmod_poly_get_coeff_ui, :libflint), UInt,
             (Ref{nmod_poly}, Int), x, 0)
     return u == y
   else
     return iszero(y)
-  end 
+  end
 end
 
 ==(x::nmod, y::nmod_poly) = y == x
@@ -341,7 +343,7 @@ end
 ################################################################################
 
 function truncate(a::T, n::Int) where T <: Zmodn_poly
-  n < 0 && throw(DomainError("Index must be non-negative: $n"))
+  n < 0 && throw(DomainError(n, "Index must be non-negative"))
   z = deepcopy(a)
   if length(z) <= n
     return z
@@ -353,7 +355,7 @@ end
 
 function mullow(x::T, y::T, n::Int) where T <: Zmodn_poly
   check_parent(x, y)
-  n < 0 && throw(DomainError("Index must be non-negative: $n"))
+  n < 0 && throw(DomainError(n, "Index must be non-negative"))
   z = parent(x)()
   ccall((:nmod_poly_mullow, :libflint), Nothing,
           (Ref{T}, Ref{T}, Ref{T}, Int), z, x, y, n)
@@ -367,7 +369,7 @@ end
 ###############################################################################
 
 function reverse(x::T, len::Int) where T <: Zmodn_poly
-  len < 0 && throw(DomainError("Index must be non-negative: $n"))
+  len < 0 && throw(DomainError(n, "Index must be non-negative"))
   z = parent(x)()
   ccall((:nmod_poly_reverse, :libflint), Nothing,
           (Ref{T}, Ref{T}, Int), z, x, len)
@@ -407,7 +409,7 @@ function divexact(x::nmod_poly, y::nmod_poly)
   iszero(y) && throw(DivideError())
   !lead_isunit(y) && error("Impossible inverse in divexact")
   z = parent(x)()
-  ccall((:nmod_poly_div, :libflint), Nothing, 
+  ccall((:nmod_poly_div, :libflint), Nothing,
           (Ref{nmod_poly}, Ref{nmod_poly}, Ref{nmod_poly}), z, x, y)
   return z
 end
@@ -471,7 +473,7 @@ end
 
 function rem(x::nmod_poly, y::nmod_poly)
   check_parent(x,y)
-  iszero(y) && throw(DivideError()) 
+  iszero(y) && throw(DivideError())
   !lead_isunit(y) && error("Impossible inverse in rem")
   z = parent(x)()
   ccall((:nmod_poly_rem, :libflint), Nothing,
@@ -483,22 +485,22 @@ mod(x::T, y::T) where T <: Zmodn_poly = rem(x, y)
 
 ################################################################################
 #
-#  GCD 
+#  GCD
 #
 ################################################################################
 
 function gcd(x::nmod_poly, y::nmod_poly)
   check_parent(x,y)
-  !is_prime(modulus(x)) && error("Modulus not prime in gcd")
+  !isprime(modulus(x)) && error("Modulus not prime in gcd")
   z = parent(x)()
   ccall((:nmod_poly_gcd, :libflint), Nothing,
           (Ref{nmod_poly}, Ref{nmod_poly}, Ref{nmod_poly}), z, x, y)
   return z
-end 
+end
 
 function gcdx(x::nmod_poly, y::nmod_poly)
   check_parent(x,y)
-  !is_prime(modulus(x)) && error("Modulus not prime in gcdx")
+  !isprime(modulus(x)) && error("Modulus not prime in gcdx")
   g = parent(x)()
   s = parent(x)()
   t = parent(x)()
@@ -510,7 +512,7 @@ end
 
 function gcdinv(x::nmod_poly, y::nmod_poly)
   check_parent(x,y)
-  !is_prime(modulus(x)) && error("Modulus not prime in gcdinv")
+  !isprime(modulus(x)) && error("Modulus not prime in gcdinv")
   length(y) <= 1 && error("Length of second argument must be >= 2")
   g = parent(x)()
   s = parent(x)()
@@ -518,7 +520,7 @@ function gcdinv(x::nmod_poly, y::nmod_poly)
           (Ref{nmod_poly}, Ref{nmod_poly}, Ref{nmod_poly}, Ref{nmod_poly}),
           g, s, x, y)
   return g,s
-end 
+end
 
 ################################################################################
 #
@@ -529,7 +531,7 @@ end
 function invmod(x::T, y::T) where T <: Zmodn_poly
   length(y) == 0 && error("Second argument must not be 0")
   check_parent(x,y)
-  if length(y) == 1 
+  if length(y) == 1
     return parent(x)(inv(eval(x, coeff(y, 0))))
   end
   z = parent(x)()
@@ -575,7 +577,7 @@ end
 function resultant(x::nmod_poly, y::nmod_poly,  check::Bool = true)
   if check
     check_parent(x,y)
-    !is_prime(modulus(x)) && error("Modulus not prime in resultant")
+    !isprime(modulus(x)) && error("Modulus not prime in resultant")
   end
   r = ccall((:nmod_poly_resultant, :libflint), UInt,
           (Ref{nmod_poly}, Ref{nmod_poly}), x, y)
@@ -680,7 +682,7 @@ function deflate(x::T, n::Int) where T <: Zmodn_poly
           (Ref{T}, Ref{T}, UInt), z, x, UInt(n))
   return z
 end
- 
+
 ################################################################################
 #
 #  Lifting
@@ -712,7 +714,7 @@ end
 > Return `true` if $x$ is irreducible, otherwise return `false`.
 """
 function isirreducible(x::nmod_poly)
-  !is_prime(modulus(x)) && error("Modulus not prime in isirreducible")
+  !isprime(modulus(x)) && error("Modulus not prime in isirreducible")
   return Bool(ccall((:nmod_poly_is_irreducible, :libflint), Int32,
           (Ref{nmod_poly}, ), x))
 end
@@ -728,7 +730,7 @@ end
 > Return `true` if $x$ is squarefree, otherwise return `false`.
 """
 function issquarefree(x::nmod_poly)
-   !is_prime(modulus(x)) && error("Modulus not prime in issquarefree")
+   !isprime(modulus(x)) && error("Modulus not prime in issquarefree")
    return Bool(ccall((:nmod_poly_is_squarefree, :libflint), Int32,
        (Ref{nmod_poly}, ), x))
 end
@@ -749,7 +751,7 @@ function factor(x::nmod_poly)
 end
 
 function _factor(x::nmod_poly)
-  !is_prime(modulus(x)) && error("Modulus not prime in factor")
+  !isprime(modulus(x)) && error("Modulus not prime in factor")
   fac = nmod_poly_factor(x.mod_n)
   z = ccall((:nmod_poly_factor, :libflint), UInt,
           (Ref{nmod_poly_factor}, Ref{nmod_poly}), fac, x)
@@ -769,7 +771,7 @@ end
 > Return the squarefree factorisation of $x$.
 """
 function factor_squarefree(x::nmod_poly)
-  !is_prime(modulus(x)) && error("Modulus not prime in factor_squarefree")
+  !isprime(modulus(x)) && error("Modulus not prime in factor_squarefree")
   return Fac(parent(x)(lead(x)), _factor_squarefree(x))
 end
 
@@ -794,7 +796,7 @@ end
 """
 function factor_distinct_deg(x::nmod_poly)
   !issquarefree(x) && error("Polynomial must be squarefree")
-  !is_prime(modulus(x)) && error("Modulus not prime in factor_distinct_deg")
+  !isprime(modulus(x)) && error("Modulus not prime in factor_distinct_deg")
   degs = Vector{Int}(undef, degree(x))
   degss = [ pointer(degs) ]
   fac = nmod_poly_factor(x.mod_n)
@@ -870,7 +872,7 @@ end
 function det(M::Generic.Mat{nmod_poly})
    nrows(M) != ncols(M) && error("Not a square matrix in det")
 
-   if is_prime(modulus(base_ring(M)))
+   if isprime(modulus(base_ring(M)))
      return det_popov(M)
    end
 
@@ -888,7 +890,7 @@ end
 ################################################################################
 
 function zero!(x::T) where T <: Zmodn_poly
-  ccall((:nmod_poly_zero, :libflint), Nothing, 
+  ccall((:nmod_poly_zero, :libflint), Nothing,
                    (Ref{T},), x)
   return x
 end
@@ -899,56 +901,56 @@ function one!(a::T) where T <: Zmodn_poly
 end
 
 function fit!(x::T, n::Int) where T <: Zmodn_poly
-  ccall((:nmod_poly_fit_length, :libflint), Nothing, 
+  ccall((:nmod_poly_fit_length, :libflint), Nothing,
                    (Ref{T}, Int), x, n)
   return nothing
 end
 
 function setcoeff!(x::T, n::Int, y::UInt) where T <: Zmodn_poly
-  ccall((:nmod_poly_set_coeff_ui, :libflint), Nothing, 
+  ccall((:nmod_poly_set_coeff_ui, :libflint), Nothing,
                    (Ref{T}, Int, UInt), x, n, y)
   return x
 end
 
 function setcoeff!(x::T, n::Int, y::Int) where T <: Zmodn_poly
-  ccall((:nmod_poly_set_coeff_ui, :libflint), Nothing, 
+  ccall((:nmod_poly_set_coeff_ui, :libflint), Nothing,
                    (Ref{T}, Int, UInt), x, n, mod(y, x.mod_n))
   return x
 end
-  
+
 function setcoeff!(x::T, n::Int, y::fmpz) where T <: Zmodn_poly
   r = ccall((:fmpz_fdiv_ui, :libflint), UInt, (Ref{fmpz}, UInt), y, x.mod_n)
-  ccall((:nmod_poly_set_coeff_ui, :libflint), Nothing, 
+  ccall((:nmod_poly_set_coeff_ui, :libflint), Nothing,
                    (Ref{T}, Int, UInt), x, n, r)
   return x
 end
-  
+
 setcoeff!(x::T, n::Int, y::Integer) where T <: Zmodn_poly = setcoeff!(x, n, fmpz(y))
-  
+
 setcoeff!(x::nmod_poly, n::Int, y::nmod) = setcoeff!(x, n, y.data)
 
 function add!(z::T, x::T, y::T) where T <: Zmodn_poly
-  ccall((:nmod_poly_add, :libflint), Nothing, 
+  ccall((:nmod_poly_add, :libflint), Nothing,
           (Ref{T}, Ref{T},  Ref{T}), z, x, y)
-  return z        
+  return z
 end
 
 function addeq!(z::T, y::T) where T <: Zmodn_poly
-  ccall((:nmod_poly_add, :libflint), Nothing, 
+  ccall((:nmod_poly_add, :libflint), Nothing,
           (Ref{T}, Ref{T},  Ref{T}), z, z, y)
-  return z        
+  return z
 end
 
 function sub!(z::T, x::T, y::T) where T <: Zmodn_poly
-  ccall((:nmod_poly_sub, :libflint), Nothing, 
+  ccall((:nmod_poly_sub, :libflint), Nothing,
           (Ref{T}, Ref{T},  Ref{T}), z, x, y)
-  return z        
+  return z
 end
 
 function mul!(z::T, x::T, y::T) where T <: Zmodn_poly
-  ccall((:nmod_poly_mul, :libflint), Nothing, 
+  ccall((:nmod_poly_mul, :libflint), Nothing,
           (Ref{T}, Ref{T},  Ref{T}), z, x, y)
-  return z        
+  return z
 end
 
 function mul!(z::T, x::T, y::UInt) where T <: Zmodn_poly
@@ -1062,6 +1064,6 @@ end
 
 function PolynomialRing(R::NmodRing, s::AbstractString; cached=true)
    parent_obj = NmodPolyRing(R, Symbol(s), cached)
-   
+
    return parent_obj, parent_obj([R(0), R(1)])
 end

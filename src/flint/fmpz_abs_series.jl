@@ -17,7 +17,7 @@ function O(a::fmpz_abs_series)
       return deepcopy(a)    # 0 + O(x^n)
    end
    prec = length(a) - 1
-   prec < 0 && throw(DomainError("Precision must be non-negative: $prec"))
+   prec < 0 && throw(DomainError(prec, "Precision must be non-negative"))
    z = fmpz_abs_series(Vector{fmpz}(undef, 0), 0, prec)
    z.parent = parent(a)
    return z
@@ -113,6 +113,8 @@ function valuation(a::fmpz_abs_series)
    return precision(a)
 end
 
+characteristic(::FmpzAbsSeriesRing) = 0
+
 ###############################################################################
 #
 #   AbstractString I/O
@@ -124,7 +126,7 @@ function show(io::IO, a::FmpzAbsSeriesRing)
    show(io, base_ring(a))
 end
 
-show_minus_one(::Type{fmpz_abs_series}) = show_minus_one(GenRes{fmpz})
+show_minus_one(::Type{fmpz_abs_series}) = show_minus_one(fmpz)
 
 ###############################################################################
 #
@@ -242,6 +244,10 @@ end
 
 *(x::fmpz_abs_series, y::fmpz) = y * x
 
+*(x::Integer, y::fmpz_abs_series) = fmpz(x)*y
+
+*(x::fmpz_abs_series, y::Integer) = y*x
+
 ###############################################################################
 #
 #   Shifting
@@ -249,7 +255,7 @@ end
 ###############################################################################
 
 function shift_left(x::fmpz_abs_series, len::Int)
-   len < 0 && throw(DomainError("Shift must be non-negative: $len"))
+   len < 0 && throw(DomainError(len, "Shift must be non-negative"))
    xlen = length(x)
    z = parent(x)()
    z.prec = x.prec + len
@@ -265,7 +271,7 @@ function shift_left(x::fmpz_abs_series, len::Int)
 end
 
 function shift_right(x::fmpz_abs_series, len::Int)
-   len < 0 && throw(DomainError("Shift must be non-negative: $len"))
+   len < 0 && throw(DomainError(len, "Shift must be non-negative"))
    xlen = length(x)
    z = parent(x)()
    if len >= xlen
@@ -286,7 +292,7 @@ end
 ###############################################################################
 
 function truncate(x::fmpz_abs_series, prec::Int)
-   prec < 0 && throw(DomainError("Index must be non-negative: $prec"))
+   prec < 0 && throw(DomainError(prec, "Index must be non-negative"))
    if x.prec <= prec
       return x
    end
@@ -305,7 +311,7 @@ end
 ###############################################################################
 
 function ^(a::fmpz_abs_series, b::Int)
-   b < 0 && throw(DomainError("Exponent must be non-negative: $b"))
+   b < 0 && throw(DomainError(b, "Exponent must be non-negative"))
    if precision(a) > 0 && isgen(a) && b > 0
       return shift_left(a, b - 1)
    elseif length(a) == 1
@@ -453,7 +459,7 @@ function inv(a::fmpz_abs_series)
                   ainv, a, a.prec)
     return ainv
 end
-   
+
 ###############################################################################
 #
 #   Inversion
@@ -467,10 +473,10 @@ function Base.sqrt(a::fmpz_abs_series)
     flag = Bool(ccall((:fmpz_poly_sqrt_series, :libflint), Cint,
                (Ref{fmpz_abs_series}, Ref{fmpz_abs_series}, Int),
                   asqrt, a, a.prec))
-    flag == false && error("Not a square in sqrt") 
+    flag == false && error("Not a square in sqrt")
     return asqrt
 end
-   
+
 ###############################################################################
 #
 #   Unsafe functions

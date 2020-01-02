@@ -48,7 +48,7 @@ mutable struct fmpz <: RingElem
     end
 
     function fmpz(x::Float64)
-        !isinteger(x) && throw(InexactError())
+        !isinteger(x) && throw(InexactError(:convert, fmpz, x))
         z = new()
         ccall((:fmpz_init, :libflint), Nothing, (Ref{fmpz},), z)
         ccall((:fmpz_set_d, :libflint), Nothing, (Ref{fmpz}, Cdouble), z, x)
@@ -128,13 +128,21 @@ mutable struct fmpq <: FracElem{fmpz}
    function fmpq(a::Int, b::Int)
       b == 0 && throw(DivideError())
       z = new()
-      if b < 0 # Flint requires positive denominator
-         b = -b
-         a = -a
+      if b == typemin(Int) || (b < 0 && a == typemin(Int))
+         bz = -ZZ(b)
+         az = -ZZ(a)
+         ccall((:fmpq_init, :libflint), Nothing, (Ref{fmpq},), z)
+         ccall((:fmpq_set_fmpz_frac, :libflint), Nothing,
+	       (Ref{fmpq}, Ref{fmpz}, Ref{fmpz}), z, az, bz)
+      else
+         if b < 0 # Flint requires positive denominator
+            b = -b
+            a = -a
+         end
+         ccall((:fmpq_init, :libflint), Nothing, (Ref{fmpq},), z)
+         ccall((:fmpq_set_si, :libflint), Nothing,
+               (Ref{fmpq}, Int, Int), z, a, b)
       end
-      ccall((:fmpq_init, :libflint), Nothing, (Ref{fmpq},), z)
-      ccall((:fmpq_set_si, :libflint), Nothing,
-            (Ref{fmpq}, Int, Int), z, a, b)
       finalizer(_fmpq_clear_fn, z)
       return z
    end
@@ -416,6 +424,86 @@ const GaloisFieldID = Dict{UInt, GaloisField}()
 struct gfp_elem <: FinFieldElem
    data::UInt
    parent::GaloisField
+end
+
+###############################################################################
+#
+#   FmpzModRing / fmpz_mod
+#
+###############################################################################
+
+mutable struct fmpz_mod_ctx_struct
+   n::Int # fmpz_t
+   add_fxn::Ptr{Nothing}
+   sub_fxn::Ptr{Nothing}
+   mul_fxn::Ptr{Nothing}
+   n2::UInt
+   ninv::UInt
+   norm::UInt
+   n_limbs::Tuple{UInt, UInt, UInt}
+   ninv_limbs::Tuple{UInt, UInt, UInt}
+
+   function fmpz_mod_ctx_struct()
+      return new()
+   end
+end
+
+mutable struct FmpzModRing <: Ring
+   n::fmpz
+   ninv::fmpz_mod_ctx_struct
+
+   function FmpzModRing(n::fmpz, cached::Bool=true)
+      if cached && haskey(FmpzModRingID, n)
+         return FmpzModRingID[n]
+      else
+         ninv = fmpz_mod_ctx_struct()
+         ccall((:fmpz_mod_ctx_init, :libflint), Nothing, (Ref{fmpz_mod_ctx_struct}, Ref{fmpz}), ninv, n)
+         z = new(n, ninv)
+         if cached
+            FmpzModRingID[n] = z
+         end
+         return z
+      end
+   end
+end
+
+const FmpzModRingID = Dict{fmpz, FmpzModRing}()
+
+struct fmpz_mod <: ResElem{fmpz}
+   data::fmpz
+   parent::FmpzModRing
+end
+
+###############################################################################
+#
+#   GaloisFmpzField / gfp_fmpz_elem
+#
+###############################################################################
+
+mutable struct GaloisFmpzField <: FinField
+   n::fmpz
+   ninv::fmpz_mod_ctx_struct
+
+   function GaloisFmpzField(n::fmpz, cached::Bool=true)
+      if cached && haskey(GaloisFmpzFieldID, n)
+         return GaloisFmpzFieldID[n]
+      else
+         ninv = fmpz_mod_ctx_struct()
+         ccall((:fmpz_mod_ctx_init, :libflint), Nothing, (Ref{fmpz_mod_ctx_struct}, Ref{fmpz}), ninv, n)
+         z = new(n, ninv)
+         if cached
+            GaloisFmpzFieldID[n] = z
+         end
+         return z
+      end
+   end
+end
+
+const GaloisFmpzFieldID = Dict{fmpz, GaloisFmpzField}()
+
+struct gfp_fmpz_elem <: FinFieldElem
+   data::fmpz
+   parent::GaloisFmpzField
 end
 
 ###############################################################################
@@ -716,12 +804,12 @@ const Zmodn_poly = Union{nmod_poly, gfp_poly}
 #
 ###############################################################################
 
-mutable struct FmpzModPolyRing <: PolyRing{Generic.Res{fmpz}}
-  base_ring::Generic.ResRing{fmpz}
+mutable struct FmpzModPolyRing <: PolyRing{fmpz_mod}
+  base_ring::FmpzModRing
   S::Symbol
   n::fmpz
 
-  function FmpzModPolyRing(R::Generic.ResRing{fmpz}, s::Symbol, cached::Bool = true)
+  function FmpzModPolyRing(R::FmpzModRing, s::Symbol, cached::Bool = true)
     m = modulus(R)
     if cached && haskey(FmpzModPolyRingID, (m, s))
        return FmpzModPolyRingID[m, s]
@@ -737,7 +825,7 @@ end
 
 const FmpzModPolyRingID = Dict{Tuple{fmpz, Symbol}, FmpzModPolyRing}()
 
-mutable struct fmpz_mod_poly <: PolyElem{Generic.Res{fmpz}}
+mutable struct fmpz_mod_poly <: PolyElem{fmpz_mod}
    coeffs::Ptr{Nothing}
    alloc::Int
    length::Int
@@ -785,7 +873,7 @@ mutable struct fmpz_mod_poly <: PolyElem{Generic.Res{fmpz}}
       return z
    end
 
-   function fmpz_mod_poly(n::fmpz, arr::Array{Generic.Res{fmpz}, 1})
+   function fmpz_mod_poly(n::fmpz, arr::Array{fmpz_mod, 1})
       z = new()
       ccall((:fmpz_mod_poly_init2, :libflint), Nothing,
             (Ref{fmpz_mod_poly}, Ref{fmpz}, Int), z, n, length(arr))
@@ -850,30 +938,30 @@ end
 #
 ###############################################################################
 
-mutable struct GFPFmpzPolyRing <: PolyRing{Generic.ResF{fmpz}}
-  base_ring::Generic.ResField{fmpz}
+mutable struct GFPFmpzPolyRing <: PolyRing{gfp_fmpz_elem}
+  base_ring::GaloisFmpzField
   S::Symbol
   n::fmpz
 
-  function GFPFmpzPolyRing(R::Generic.ResField{fmpz}, s::Symbol, cached::Bool = true)
+  function GFPFmpzPolyRing(R::GaloisFmpzField, s::Symbol, cached::Bool = true)
     m = modulus(R)
     if cached && haskey(GFPFmpzPolyRingID, (R, s))
        return GFPFmpzPolyRingID[R, s]
     else
        z = new(R, s, m)
        if cached
-          GFPFmpzPolyRingID[R ,s] = z
+          GFPFmpzPolyRingID[R, s] = z
        end
        return z
     end
   end
 end
 
-const GFPFmpzPolyRingID = Dict{Tuple{Generic.ResField{fmpz}, Symbol}, GFPFmpzPolyRing}()
+const GFPFmpzPolyRingID = Dict{Tuple{GaloisFmpzField, Symbol}, GFPFmpzPolyRing}()
 
 const ZmodNFmpzPolyRing = Union{FmpzModPolyRing, GFPFmpzPolyRing}
 
-mutable struct gfp_fmpz_poly <: PolyElem{Generic.Res{fmpz}}
+mutable struct gfp_fmpz_poly <: PolyElem{gfp_fmpz_elem}
    coeffs::Ptr{Nothing}
    alloc::Int
    length::Int
@@ -921,7 +1009,7 @@ mutable struct gfp_fmpz_poly <: PolyElem{Generic.Res{fmpz}}
       return z
    end
 
-   function gfp_fmpz_poly(n::fmpz, arr::Array{Generic.ResF{fmpz}, 1})
+   function gfp_fmpz_poly(n::fmpz, arr::Array{gfp_fmpz_elem, 1})
       z = new()
       ccall((:fmpz_mod_poly_init2, :libflint), Nothing,
             (Ref{gfp_fmpz_poly}, Ref{fmpz}, Int), z, n, length(arr))
@@ -1067,7 +1155,7 @@ mutable struct fmpz_mpoly <: MPolyElem{fmpz}
                (Ref{fmpz_mpoly}, Ref{fmpz}, Ptr{UInt}, Ref{FmpzMPolyRing}),
                z, a[i], b[i], ctx)
        end
- 
+
        ccall((:fmpz_mpoly_sort_terms, :libflint), Nothing,
              (Ref{fmpz_mpoly}, Ref{FmpzMPolyRing}), z, ctx)
        ccall((:fmpz_mpoly_combine_like_terms, :libflint), Nothing,
@@ -1087,7 +1175,7 @@ mutable struct fmpz_mpoly <: MPolyElem{fmpz}
                (Ref{fmpz_mpoly}, Ref{fmpz}, Ptr{Int}, Ref{FmpzMPolyRing}),
                z, a[i], b[i], ctx)
        end
- 
+
        ccall((:fmpz_mpoly_sort_terms, :libflint), Nothing,
              (Ref{fmpz_mpoly}, Ref{FmpzMPolyRing}), z, ctx)
        ccall((:fmpz_mpoly_combine_like_terms, :libflint), Nothing,
@@ -1107,7 +1195,7 @@ mutable struct fmpz_mpoly <: MPolyElem{fmpz}
                (Ref{fmpz_mpoly}, Ref{fmpz}, Ptr{Ref{fmpz}}, Ref{FmpzMPolyRing}),
                z, a[i], b[i], ctx)
        end
- 
+
        ccall((:fmpz_mpoly_sort_terms, :libflint), Nothing,
              (Ref{fmpz_mpoly}, Ref{FmpzMPolyRing}), z, ctx)
        ccall((:fmpz_mpoly_combine_like_terms, :libflint), Nothing,
@@ -1308,7 +1396,7 @@ mutable struct fmpq_mpoly <: MPolyElem{fmpq}
       finalizer(_fmpq_mpoly_clear_fn, z)
       return z
    end
-   
+
    function fmpq_mpoly(ctx::FmpqMPolyRing, a::Int)
       z = new()
       ccall((:fmpq_mpoly_init, :libflint), Nothing,
@@ -1528,6 +1616,8 @@ mutable struct FqNmodFiniteField <: FinField
    inv_ninv :: Int
    inv_norm :: Int
    var :: Ptr{Nothing}
+   overfields :: Dict{Int, Array{FinFieldMorphism, 1}}
+   subfields :: Dict{Int, Array{FinFieldMorphism, 1}}
 
    function FqNmodFiniteField(c::fmpz, deg::Int, s::Symbol, cached::Bool = true)
       if cached && haskey(FqNmodFiniteFieldID, (c, deg, s))
@@ -1537,6 +1627,8 @@ mutable struct FqNmodFiniteField <: FinField
          ccall((:fq_nmod_ctx_init, :libflint), Nothing,
                (Ref{FqNmodFiniteField}, Ref{fmpz}, Int, Ptr{UInt8}),
 			    d, c, deg, string(s))
+         d.overfields = Dict{Int, Array{FinFieldMorphism, 1}}()
+         d.subfields = Dict{Int, Array{FinFieldMorphism, 1}}()
          if cached
             FqNmodFiniteFieldID[c, deg, s] = d
          end
@@ -1545,7 +1637,9 @@ mutable struct FqNmodFiniteField <: FinField
       end
    end
 
-   function FqNmodFiniteField(f::nmod_poly, s::Symbol, cached::Bool = true)
+   function FqNmodFiniteField(f::nmod_poly, s::Symbol, cached::Bool = true; check::Bool = true)
+      check && !isprime(modulus(f)) &&
+         throw(DomainError(base_ring(f), "the base ring of the polynomial must be a field"))
       if cached && haskey(FqNmodFiniteFieldIDNmodPol, (parent(f), f, s))
          return FqNmodFiniteFieldIDNmodPol[parent(f), f, s]
       else
@@ -1553,6 +1647,8 @@ mutable struct FqNmodFiniteField <: FinField
          ccall((:fq_nmod_ctx_init_modulus, :libflint), Nothing,
             (Ref{FqNmodFiniteField}, Ref{nmod_poly}, Ptr{UInt8}),
 	      z, f, string(s))
+         z.overfields = Dict{Int, Array{FinFieldMorphism, 1}}()
+         z.subfields = Dict{Int, Array{FinFieldMorphism, 1}}()
          if cached
             FqNmodFiniteFieldIDNmodPol[parent(f), f, s] = z
          end
@@ -1560,8 +1656,9 @@ mutable struct FqNmodFiniteField <: FinField
          return z
       end
    end
-   
-   function FqNmodFiniteField(f::gfp_poly, s::Symbol, cached::Bool = true)
+
+   function FqNmodFiniteField(f::gfp_poly, s::Symbol, cached::Bool = true; check::Bool=true)
+      # check ignored
       if cached && haskey(FqNmodFiniteFieldIDGFPPol, (parent(f), f, s))
          return FqNmodFiniteFieldIDGFPPol[parent(f), f, s]
       else
@@ -1666,6 +1763,8 @@ mutable struct FqFiniteField <: FinField
    inv_length::Int
    inv_p::Int # fmpz
    var::Ptr{Nothing}
+   overfields :: Dict{Int, Array{FinFieldMorphism, 1}}
+   subfields :: Dict{Int, Array{FinFieldMorphism, 1}}
 
    function FqFiniteField(char::fmpz, deg::Int, s::Symbol, cached::Bool = true)
       if cached && haskey(FqFiniteFieldID, (char, deg, s))
@@ -1683,7 +1782,9 @@ mutable struct FqFiniteField <: FinField
       end
    end
 
-   function FqFiniteField(f::fmpz_mod_poly, s::Symbol, cached::Bool = true)
+   function FqFiniteField(f::fmpz_mod_poly, s::Symbol, cached::Bool = true; check::Bool = true)
+      check && !isprobable_prime(modulus(f)) &&
+         throw(DomainError(base_ring(f), "the base ring of the polynomial must be a field"))
       if cached && haskey(FqFiniteFieldIDFmpzPol, (f, s))
          return FqFiniteFieldIDFmpzPol[f, s]
       else
@@ -1698,8 +1799,9 @@ mutable struct FqFiniteField <: FinField
          return z
       end
    end
-   
-   function FqFiniteField(f::gfp_fmpz_poly, s::Symbol, cached::Bool = true)
+
+   function FqFiniteField(f::gfp_fmpz_poly, s::Symbol, cached::Bool = true; check::Bool = true)
+      # check ignored
       if cached && haskey(FqFiniteFieldIDGFPPol, (f, s))
          return FqFiniteFieldIDGFPPol[f, s]
       else
@@ -1781,6 +1883,26 @@ function _fq_clear_fn(a::fq)
          (Ref{fq}, Ref{FqFiniteField}), a, a.parent)
 end
 
+
+###############################################################################
+#
+#   FlintLocalField / Local field type heirarchy
+#
+###############################################################################
+
+# Abstract types
+abstract type NonArchLocalField     <: Field end
+abstract type NonArchLocalFieldElem <: FieldElem end
+
+abstract type FlintLocalField     <: NonArchLocalField end
+abstract type FlintLocalFieldElem <: NonArchLocalFieldElem end
+
+
+# Alias
+const NALocalField     = NonArchLocalField
+const NALocalFieldElem = NonArchLocalFieldElem
+
+
 ###############################################################################
 #
 #   FlintPadicField / padic
@@ -1789,7 +1911,7 @@ end
 
 const flint_padic_printing_mode = [:terse, :series, :val_unit]
 
-mutable struct FlintPadicField <: Field
+mutable struct FlintPadicField <: FlintLocalField
    p::Int
    pinv::Float64
    pow::Ptr{Nothing}
@@ -1799,7 +1921,7 @@ mutable struct FlintPadicField <: Field
    prec_max::Int
 
    function FlintPadicField(p::fmpz, prec::Int; cached::Bool = true, check::Bool = true)
-      check && !isprime(p) && throw(DomainError("Characteristic must be prime: $p"))
+      check && !isprobable_prime(p) && throw(DomainError(p, "Characteristic must be prime"))
 
       if cached
          a = (p, prec)
@@ -1831,7 +1953,7 @@ function _padic_ctx_clear_fn(a::FlintPadicField)
    ccall((:padic_ctx_clear, :libflint), Nothing, (Ref{FlintPadicField},), a)
 end
 
-mutable struct padic <: FieldElem
+mutable struct padic <: FlintLocalFieldElem
    u :: Int
    v :: Int
    N :: Int
@@ -1855,7 +1977,7 @@ end
 #
 ###############################################################################
 
-mutable struct FlintQadicField <: Field
+mutable struct FlintQadicField <: FlintLocalField
    p::Int
    pinv::Float64
    pow::Ptr{Nothing}
@@ -1869,7 +1991,7 @@ mutable struct FlintQadicField <: Field
    prec_max::Int
 
    function FlintQadicField(p::fmpz, d::Int, prec::Int; cached::Bool = true, check::Bool = true)
-      check && !isprime(p) && throw(DomainError("Characteristic must be prime: $p"))
+      check && !isprobable_prime(p) && throw(DomainError(p, "Characteristic must be prime"))
 
       if cached
          a = (p, d, prec)
@@ -1900,7 +2022,7 @@ function _qadic_ctx_clear_fn(a::FlintQadicField)
    ccall((:qadic_ctx_clear, :libflint), Nothing, (Ref{FlintQadicField},), a)
 end
 
-mutable struct qadic <: FieldElem
+mutable struct qadic <: FlintLocalFieldElem
    coeffs::Int
    alloc::Int
    length::Int
@@ -2452,8 +2574,8 @@ end
 #
 ###############################################################################
 
-mutable struct FmpzModRelSeriesRing <: SeriesRing{Generic.Res{fmpz}}
-   base_ring::Generic.ResRing{fmpz}
+mutable struct FmpzModRelSeriesRing <: SeriesRing{fmpz_mod}
+   base_ring::FmpzModRing
    prec_max::Int
    S::Symbol
 
@@ -2471,10 +2593,10 @@ mutable struct FmpzModRelSeriesRing <: SeriesRing{Generic.Res{fmpz}}
    end
 end
 
-const FmpzModRelSeriesID = Dict{Tuple{Generic.ResRing{fmpz}, Int, Symbol},
+const FmpzModRelSeriesID = Dict{Tuple{FmpzModRing, Int, Symbol},
                                 FmpzModRelSeriesRing}()
 
-mutable struct fmpz_mod_rel_series <: RelSeriesElem{Generic.Res{fmpz}}
+mutable struct fmpz_mod_rel_series <: RelSeriesElem{fmpz_mod}
    coeffs::Ptr{Nothing}
    alloc::Int
    length::Int
@@ -2505,7 +2627,7 @@ mutable struct fmpz_mod_rel_series <: RelSeriesElem{Generic.Res{fmpz}}
       return z
    end
 
-   function fmpz_mod_rel_series(p::fmpz, a::Array{Generic.Res{fmpz}, 1}, len::Int, prec::Int, val::Int)
+   function fmpz_mod_rel_series(p::fmpz, a::Array{fmpz_mod, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fmpz_mod_poly_init2, :libflint), Nothing,
             (Ref{fmpz_mod_rel_series}, Ref{fmpz}, Int), z, p, len)
@@ -2541,8 +2663,8 @@ end
 #
 ###############################################################################
 
-mutable struct FmpzModAbsSeriesRing <: SeriesRing{Generic.Res{fmpz}}
-   base_ring::Generic.ResRing{fmpz}
+mutable struct FmpzModAbsSeriesRing <: SeriesRing{fmpz_mod}
+   base_ring::FmpzModRing
    prec_max::Int
    S::Symbol
 
@@ -2560,10 +2682,10 @@ mutable struct FmpzModAbsSeriesRing <: SeriesRing{Generic.Res{fmpz}}
    end
 end
 
-const FmpzModAbsSeriesID = Dict{Tuple{Generic.ResRing{fmpz}, Int, Symbol},
+const FmpzModAbsSeriesID = Dict{Tuple{FmpzModRing, Int, Symbol},
                                 FmpzModAbsSeriesRing}()
 
-mutable struct fmpz_mod_abs_series <: AbsSeriesElem{Generic.Res{fmpz}}
+mutable struct fmpz_mod_abs_series <: AbsSeriesElem{fmpz_mod}
    coeffs::Ptr{Nothing}
    alloc::Int
    length::Int
@@ -2592,7 +2714,7 @@ mutable struct fmpz_mod_abs_series <: AbsSeriesElem{Generic.Res{fmpz}}
       return z
    end
 
-   function fmpz_mod_abs_series(p::fmpz, a::Array{Generic.Res{fmpz}, 1}, len::Int, prec::Int)
+   function fmpz_mod_abs_series(p::fmpz, a::Array{fmpz_mod, 1}, len::Int, prec::Int)
       z = new()
       ccall((:fmpz_mod_poly_init2, :libflint), Nothing,
             (Ref{fmpz_mod_abs_series}, Ref{fmpz}, Int), z, p, len)
@@ -3293,33 +3415,24 @@ mutable struct nmod_mat <: MatElem{nmod}
             (Ref{nmod_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_nmod_mat_clear_fn, z)
     if transpose
-      se = set_entry_t!
-      r,c = c,r
-    else
-      se = set_entry!
+      arr = Base.transpose(arr)
     end
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[i, j])
+        setindex_raw!(z, mod(arr[i, j], n), i, j)
       end
     end
     return z
   end
 
-  function nmod_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{UInt, 1}, transpose::Bool = false)
+  function nmod_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{UInt, 1})
     z = new()
     ccall((:nmod_mat_init, :libflint), Nothing,
             (Ref{nmod_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_nmod_mat_clear_fn, z)
-    if transpose
-      se = set_entry_t!
-      r,c = c,r
-    else
-      se = set_entry!
-    end
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[(i - 1) * c + j])
+        setindex_raw!(z, mod(arr[(i - 1) * c + j], n), i, j)
       end
     end
     return z
@@ -3331,33 +3444,31 @@ mutable struct nmod_mat <: MatElem{nmod}
             (Ref{nmod_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_nmod_mat_clear_fn, z)
     if transpose
-      se = set_entry_t!
-      r,c = c,r
-    else
-      se = set_entry!
+       arr = Base.transpose(arr)
     end
+    t = fmpz()
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[i, j])
+        ccall((:fmpz_mod_ui, :libflint), Nothing,
+	      (Ref{fmpz}, Ref{fmpz}, Ref{fmpz}), t, arr[i, j], n)
+	setindex_raw!(z, t, i, j)
       end
     end
     return z
   end
 
-  function nmod_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{fmpz, 1}, transpose::Bool = false)
+  function nmod_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{fmpz, 1})
     z = new()
     ccall((:nmod_mat_init, :libflint), Nothing,
             (Ref{nmod_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_nmod_mat_clear_fn, z)
-    if transpose
-      se = set_entry_t!
-      r,c = c,r
-    else
-      se = set_entry!
-    end
+    t = fmpz()
+    n = fmpz(n)
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[(i - 1) * c + j])
+        ccall((:fmpz_mod_ui, :libflint), Nothing,
+              (Ref{fmpz}, Ref{fmpz}, Ref{fmpz}), t, arr[(i - 1) * c + j], n)
+        setindex!(z, t, i, j)
       end
     end
     return z
@@ -3368,9 +3479,9 @@ mutable struct nmod_mat <: MatElem{nmod}
     return nmod_mat(r, c, n, arr_fmpz, transpose)
   end
 
-  function nmod_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{T, 1}, transpose::Bool = false) where {T <: Integer}
+  function nmod_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{T, 1}) where {T <: Integer}
     arr_fmpz = map(fmpz, arr)
-    return nmod_mat(r, c, n, arr_fmpz, transpose)
+    return nmod_mat(r, c, n, arr_fmpz)
   end
 
   function nmod_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{nmod, 2}, transpose::Bool = false)
@@ -3379,33 +3490,24 @@ mutable struct nmod_mat <: MatElem{nmod}
             (Ref{nmod_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_nmod_mat_clear_fn, z)
     if transpose
-      se = set_entry_t!
-      r,c = c,r
-    else
-      se = set_entry!
+      arr = Base.transpose(arr)
     end
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[i, j])
+        setindex_raw!(z, arr[i, j].data, i, j) # no reduction necessary
       end
     end
     return z
   end
 
-  function nmod_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{nmod, 1}, transpose::Bool = false)
+  function nmod_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{nmod, 1})
     z = new()
     ccall((:nmod_mat_init, :libflint), Nothing,
             (Ref{nmod_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_nmod_mat_clear_fn, z)
-    if transpose
-      se = set_entry_t!
-      r, c = c, r
-    else
-      se = set_entry!
-    end
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[(i - 1) * c + j])
+        setindex_raw!(z, arr[(i - 1) * c + j].data, i, j) # no reduction necessary
       end
     end
     return z
@@ -3437,6 +3539,150 @@ end
 function _nmod_mat_clear_fn(mat::nmod_mat)
   ccall((:nmod_mat_clear, :libflint), Nothing, (Ref{nmod_mat}, ), mat)
 end
+
+###############################################################################          #
+#   FmpzModMatSpace / fmpz_mod_mat
+#
+###############################################################################
+
+mutable struct FmpzModMatSpace <: MatSpace{fmpz_mod}
+  base_ring::FmpzModRing
+  n::fmpz
+  nrows::Int
+  ncols::Int
+
+  function FmpzModMatSpace(R::FmpzModRing, r::Int, c::Int,
+                        cached::Bool = true)
+    (r < 0 || c < 0) && throw(error_dim_negative)
+    if cached && haskey(FmpzModMatID, (R, r, c))
+      return FmpzModMatID[R, r, c]
+    else
+      z = new(R, R.n, r, c)
+      if cached
+        FmpzModMatID[R, r, c] = z
+      end
+      return z
+    end
+  end
+end
+
+const FmpzModMatID = Dict{Tuple{FmpzModRing, Int, Int}, FmpzModMatSpace}()
+
+mutable struct fmpz_mod_mat <: MatElem{fmpz_mod}
+   entries::Ptr{Nothing}
+   r::Int
+   c::Int
+   rows::Ptr{Nothing}
+   mod::Int              # fmpz
+   base_ring::FmpzModRing
+   view_parent
+
+  # Used by view, not finalised!!
+  function fmpz_mod_mat()
+    z = new()
+    return z
+  end
+
+  function fmpz_mod_mat(r::Int, c::Int, n::fmpz)
+    z = new()
+    ccall((:fmpz_mod_mat_init, :libflint), Nothing,
+            (Ref{fmpz_mod_mat}, Int, Int, Ref{fmpz}), z, r, c, n)
+    finalizer(_fmpz_mod_mat_clear_fn, z)
+    return z
+  end
+
+  function fmpz_mod_mat(r::Int, c::Int, n::fmpz, arr::AbstractArray{fmpz, 2}, transpose::Bool = false)
+    z = new()
+    ccall((:fmpz_mod_mat_init, :libflint), Nothing,
+            (Ref{fmpz_mod_mat}, Int, Int, Ref{fmpz}), z, r, c, n)
+    finalizer(_fmpz_mod_mat_clear_fn, z)
+    if transpose
+       arr = Base.transpose(arr)
+    end
+    for i = 1:r
+      for j = 1:c
+         setindex_raw!(z, mod(arr[i, j], n), i, j)
+      end
+    end
+    return z
+  end
+
+  function fmpz_mod_mat(r::Int, c::Int, n::fmpz, arr::AbstractArray{T, 2}, transpose::Bool = false) where T <: Integer
+    z = new()
+    ccall((:fmpz_mod_mat_init, :libflint), Nothing,
+	  (Ref{fmpz_mod_mat}, Int, Int, Ref{fmpz}), z, r, c, n)
+    finalizer(_fmpz_mod_mat_clear_fn, z)
+    if transpose
+       arr = Base.transpose(arr)
+    end
+    for i = 1:r
+      for j = 1:c
+         setindex_raw!(z, mod(fmpz(arr[i, j]), n), i, j)
+      end
+    end
+    return z
+  end
+
+  function fmpz_mod_mat(r::Int, c::Int, n::fmpz, arr::AbstractArray{fmpz_mod, 2}, transpose::Bool = false)
+    z = new()
+    ccall((:fmpz_mod_mat_init, :libflint), Nothing,
+	  (Ref{fmpz_mod_mat}, Int, Int, Ref{fmpz}), z, r, c, n)
+    finalizer(_fmpz_mod_mat_clear_fn, z)
+    if transpose
+       arr = Base.transpose(arr)
+    end
+    for i = 1:r
+      for j = 1:c
+         setindex_raw!(z, arr[i, j].data, i, j)
+      end
+    end
+    return z
+  end
+
+  function fmpz_mod_mat(r::Int, c::Int, n::fmpz, arr::AbstractArray{fmpz, 1})
+    z = new()
+    ccall((:fmpz_mod_mat_init, :libflint), Nothing,
+            (Ref{fmpz_mod_mat}, Int, Int, Ref{fmpz}), z, r, c, n)
+    finalizer(_fmpz_mod_mat_clear_fn, z)
+    for i = 1:r
+      for j = 1:c
+        setindex_raw!(z, mod(arr[(i - 1)*c + j], n), i, j)
+      end
+    end
+    return z
+  end
+
+  function fmpz_mod_mat(r::Int, c::Int, n::fmpz, arr::AbstractArray{T, 1}) where T <: Integer
+    z = new()
+    ccall((:fmpz_mod_mat_init, :libflint), Nothing,
+          (Ref{fmpz_mod_mat}, Int, Int, Ref{fmpz}), z, r, c, n)
+    finalizer(_fmpz_mod_mat_clear_fn, z)
+    for i = 1:r
+       for j = 1:c
+          setindex_raw!(z, mod(fmpz(arr[(i - 1)*c + j]), n), i, j)
+       end
+    end
+    return z
+  end
+
+  function fmpz_mod_mat(r::Int, c::Int, n::fmpz, arr::AbstractArray{fmpz_mod, 1})                z = new()
+    ccall((:fmpz_mod_mat_init, :libflint), Nothing,
+	  (Ref{fmpz_mod_mat}, Int, Int, Ref{fmpz}), z, r, c, n)
+    finalizer(_fmpz_mod_mat_clear_fn, z)
+    for i = 1:r
+       for j = 1:c
+          setindex_raw!(z, arr[(i - 1)*c + j].data, i, j)
+       end
+    end
+    return z
+  end
+end
+
+function _fmpz_mod_mat_clear_fn(mat::fmpz_mod_mat)
+  ccall((:fmpz_mod_mat_clear, :libflint), Nothing, (Ref{fmpz_mod_mat}, ), mat)
+end
+
+const Zmod_fmpz_mat = fmpz_mod_mat # eventually a union with future gfp_fmpz_mat
 
 ################################################################################
 #
@@ -3498,33 +3744,24 @@ mutable struct gfp_mat <: MatElem{gfp_elem}
             (Ref{gfp_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_gfp_mat_clear_fn, z)
     if transpose
-      se = set_entry_t!
-      r, c = c, r
-    else
-      se = set_entry!
+      arr = Base.transpose(arr)
     end
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[i, j])
+        setindex_raw!(z, mod(arr[i, j], n), i, j)
       end
     end
     return z
   end
 
-  function gfp_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{UInt, 1}, transpose::Bool = false)
+  function gfp_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{UInt, 1})
     z = new()
     ccall((:nmod_mat_init, :libflint), Nothing,
             (Ref{gfp_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_gfp_mat_clear_fn, z)
-    if transpose
-      se = set_entry_t!
-      r, c = c, r
-    else
-      se = set_entry!
-    end
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[(i - 1) * c + j])
+        setindex_raw!(z, mod(arr[(i - 1) * c + j], n), i, j)
       end
     end
     return z
@@ -3536,33 +3773,30 @@ mutable struct gfp_mat <: MatElem{gfp_elem}
             (Ref{gfp_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_gfp_mat_clear_fn, z)
     if transpose
-      se = set_entry_t!
-      r, c = c, r
-    else
-      se = set_entry!
+       arr = Base.transpose(arr)
     end
+    t = fmpz()
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[i, j])
+        ccall((:fmpz_mod_ui, :libflint), Nothing,
+              (Ref{fmpz}, Ref{fmpz}, Ref{fmpz}), t, arr[i, j], n)
+        setindex_raw!(z, t, i, j)
       end
     end
     return z
   end
 
-  function gfp_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{fmpz, 1}, transpose::Bool = false)
+  function gfp_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{fmpz, 1})
     z = new()
     ccall((:nmod_mat_init, :libflint), Nothing,
             (Ref{gfp_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_gfp_mat_clear_fn, z)
-    if transpose
-      se = set_entry_t!
-      r, c = c, r
-    else
-      se = set_entry!
-    end
+    t = fmpz()
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[(i - 1) * c + j])
+        ccall((:fmpz_mod_ui, :libflint), Nothing,
+              (Ref{fmpz}, Ref{fmpz}, Ref{fmpz}), t, arr[(i - 1) * c + j], n)
+        setindex!(z, t, i, j)
       end
     end
     return z
@@ -3573,9 +3807,9 @@ mutable struct gfp_mat <: MatElem{gfp_elem}
     return gfp_mat(r, c, n, arr_fmpz, transpose)
   end
 
-  function gfp_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{T, 1}, transpose::Bool = false) where {T <: Integer}
+  function gfp_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{T, 1}) where {T <: Integer}
     arr_fmpz = map(fmpz, arr)
-    return gfp_mat(r, c, n, arr_fmpz, transpose)
+    return gfp_mat(r, c, n, arr_fmpz)
   end
 
   function gfp_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{gfp_elem, 2}, transpose::Bool = false)
@@ -3584,33 +3818,24 @@ mutable struct gfp_mat <: MatElem{gfp_elem}
             (Ref{gfp_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_gfp_mat_clear_fn, z)
     if transpose
-      se = set_entry_t!
-      r, c = c, r
-    else
-      se = set_entry!
+      arr = Base.transpose(arr)
     end
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[i, j])
+        setindex_raw!(z, arr[i, j].data, i, j) # no reduction necessary
       end
     end
     return z
   end
 
-  function gfp_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{gfp_elem, 1}, transpose::Bool = false)
+  function gfp_mat(r::Int, c::Int, n::UInt, arr::AbstractArray{gfp_elem, 1})
     z = new()
     ccall((:nmod_mat_init, :libflint), Nothing,
             (Ref{gfp_mat}, Int, Int, UInt), z, r, c, n)
     finalizer(_gfp_mat_clear_fn, z)
-    if transpose
-      se = set_entry_t!
-      r, c = c, r
-    else
-      se = set_entry!
-    end
     for i = 1:r
       for j = 1:c
-        se(z, i, j, arr[(i - 1) * c + j])
+        setindex_raw!(z, arr[(i - 1) * c + j].data, i, j) # no reduction necessary
       end
     end
     return z
@@ -3951,7 +4176,7 @@ mutable struct fq_mat <: MatElem{fq}
    rows::Ptr{Nothing}
    base_ring::FqFiniteField
    view_parent
-   
+
    # used by windows, not finalised!!
    function fq_mat()
       return new()
@@ -4139,7 +4364,7 @@ mutable struct fq_nmod_mat <: MatElem{fq_nmod}
    rows::Ptr{Nothing}
    base_ring::FqNmodFiniteField
    view_parent
-   
+
    # used by windows, not finalised!!
    function fq_nmod_mat()
       return new()
@@ -4293,3 +4518,26 @@ function _fq_nmod_mat_clear_fn(a::fq_nmod_mat)
    ccall((:fq_nmod_mat_clear, :libflint), Nothing, (Ref{fq_nmod_mat}, Ref{FqNmodFiniteField}), a, base_ring(a))
 end
 
+################################################################################
+#
+#   Rand state
+#
+################################################################################
+
+mutable struct rand_ctx
+   ptr::Ptr{Cvoid}
+
+   function rand_ctx()
+      z = new()
+      z.ptr = ccall((:flint_rand_alloc, libflint), Ptr{Cvoid}, ( ))
+      ccall((:flint_randinit, libflint), Cvoid, (Ptr{Cvoid}, ), z.ptr)
+      finalizer(_rand_ctx_clear_fn, z)
+      return z
+   end
+end
+
+function _rand_ctx_clear_fn(a::rand_ctx)
+   ccall((:flint_randclear, libflint), Cvoid, (Ptr{Cvoid}, ), a.ptr)
+   ccall((:flint_rand_free, libflint), Cvoid, (Ptr{Cvoid}, ), a.ptr)
+   nothing
+end

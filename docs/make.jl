@@ -1,10 +1,11 @@
-using Documenter, Nemo
+using Documenter, Nemo, AbstractAlgebra
 
 makedocs(
          format   = :html,
          sitename = "Nemo.jl",
-         modules = [Nemo],
+         modules = [Nemo, AbstractAlgebra],
          clean = true,
+         checkdocs = :none,
          doctest = false,
          pages    = [
              "index.md",
@@ -13,6 +14,7 @@ makedocs(
              "constructors.md",
              "Rings" => [ "integer.md",
                           "polynomial.md",
+                          "mpolynomial.md",
                           "series.md",
                           "puiseux.md",
                           "residue.md"],
@@ -22,6 +24,7 @@ makedocs(
                            "acb.md",
                            "gfp.md",
                            "finitefield.md",
+			   "ff_embedding.md",
                            "numberfield.md",
                            "padic.md",
                            "qadic.md"],

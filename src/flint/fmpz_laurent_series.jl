@@ -193,7 +193,7 @@ end
 > for padding. It is assumed that the scale factor of $a$ is divisible by $n$.
 """
 function downscale(a::fmpz_laurent_series, n::Int)
-   n <= 0 && throw(DomainError("Scale must be positive: $n"))
+   n <= 0 && throw(DomainError(n, "Scale must be positive"))
    lena = pol_length(a)
    if n == 1 || lena == 0
       return a
@@ -225,7 +225,7 @@ end
 > of $a$ is divisible by $n$.
 """
 function upscale(a::fmpz_laurent_series, n::Int)
-   n <= 0 && throw(DomainError("Scale must be positive: $n"))
+   n <= 0 && throw(DomainError(n, "Scale must be positive"))
    lena = pol_length(a)
    if n == 1 || lena == 0
       return a
@@ -338,6 +338,8 @@ function renormalize!(z::fmpz_laurent_series)
    end
    return nothing
 end
+
+characteristic(::FmpzLaurentSeriesRing) = 0
 
 ###############################################################################
 #
@@ -1323,14 +1325,14 @@ end
 #
 ###############################################################################
 
-function rand(S::FmpzLaurentSeriesRing, val_range::UnitRange{Int}, v...)
+function rand(rng::AbstractRNG, S::FmpzLaurentSeriesRing, val_range::UnitRange{Int}, v...)
    R = base_ring(S)
    f = S()
    x = gen(S)
    for i = 0:S.prec_max - 1
-      f += rand(R, v...)*x^i
+      f += rand(rng, R, v...)*x^i
    end
-   return shift_left(f, rand(val_range))
+   return shift_left(f, rand(rng, val_range))
 end
 
 ###############################################################################

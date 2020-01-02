@@ -120,7 +120,7 @@ end
 
 @doc Markdown.doc"""
     prime(R::FlintQadicField)
-> Return the prime $q$ for the given $q$-adic field.
+> Return the prime $p$ for the given $q$-adic field.
 """
 function prime(R::FlintQadicField)
    z = fmpz()
@@ -142,7 +142,9 @@ precision(a::qadic) = a.N
 > element is divisible by $p^n$ but not a higher power of $q$ then the function
 > will return $n$.
 """
-valuation(a::qadic) = ccall((:qadic_val, :libflint), Int, (Ref{qadic}, ), a)
+function valuation(a::qadic)
+    iszero(a) ? precision(a) : ccall((:qadic_val, :libflint), Int, (Ref{qadic}, ), a)
+end
 
 @doc Markdown.doc"""
     lift(R::FmpqPolyRing, a::qadic)
@@ -215,6 +217,8 @@ isone(a::qadic) = Bool(ccall((:qadic_is_one, :libflint), Cint,
 isunit(a::qadic) = !Bool(ccall((:qadic_is_zero, :libflint), Cint,
                               (Ref{qadic},), a))
 
+characteristic(R::FlintQadicField) = 0
+
 ###############################################################################
 #
 #   AbstractString I/O
@@ -223,7 +227,7 @@ isunit(a::qadic) = !Bool(ccall((:qadic_is_zero, :libflint), Cint,
 
 function show(io::IO, x::qadic)
    R = FlintPadicField(prime(parent(x)), parent(x).prec_max)
-   if iszero(x) 
+   if iszero(x)
      print(io, "0")
      return
    end
@@ -576,7 +580,7 @@ end
 > exception is thrown.
 """
 function Base.exp(a::qadic)
-   !iszero(a) && valuation(a) <= 0 && throw(DomainError("Valuation must be positive"))
+   !iszero(a) && valuation(a) <= 0 && throw(DomainError(a, "Valuation must be positive"))
    ctx = parent(a)
    z = qadic(a.N)
    z.parent = ctx
@@ -595,7 +599,7 @@ end
 """
 function log(a::qadic)
    av = valuation(a)
-   (av > 0 || av < 0 || iszero(a)) && throw(DomainError("Valuation must be zero"))
+   (av > 0 || av < 0 || iszero(a)) && throw(DomainError(a, "Valuation must be zero"))
    ctx = parent(a)
    z = qadic(a.N)
    z.parent = ctx
@@ -614,7 +618,7 @@ end
 > thrown.
 """
 function teichmuller(a::qadic)
-   valuation(a) < 0 && throw(DomainError("Valuation must be non-negative"))
+   valuation(a) < 0 && throw(DomainError(a, "Valuation must be non-negative"))
    ctx = parent(a)
    z = qadic(a.N)
    z.parent = ctx
@@ -757,7 +761,13 @@ function gen(R::FlintQadicField)
 end
 
 function (R::FlintQadicField)(a::UInt)
-   z = qadic(R.prec_max)
+   if a == 0
+     z = qadic(R.prec_max)
+     z.parent = R
+     return z
+   end
+   v = valuation(a, prime(R))
+   z = qadic(R.prec_max + v)
    ccall((:qadic_set_ui, :libflint), Nothing,
          (Ref{qadic}, UInt, Ref{FlintQadicField}), z, a, R)
    z.parent = R
@@ -765,7 +775,13 @@ function (R::FlintQadicField)(a::UInt)
 end
 
 function (R::FlintQadicField)(a::Int)
-   z = qadic(R.prec_max)
+   if a == 0
+     z = qadic(R.prec_max)
+     z.parent = R
+     return z
+   end
+   v = valuation(a, prime(R))
+   z = qadic(R.prec_max + v)
    ccall((:padic_poly_set_si, :libflint), Nothing,
          (Ref{qadic}, Int, Ref{FlintQadicField}), z,a, R)
    z.parent = R
@@ -777,7 +793,7 @@ function (R::FlintQadicField)(n::fmpz)
       N = 0
    else
       p = prime(R)
-      N, = remove(n, p)
+      N = valuation(n, p)
    end
    z = qadic(N + R.prec_max)
    ccall((:qadic_set_fmpz, :libflint), Nothing,
@@ -795,7 +811,7 @@ function (R::FlintQadicField)(n::fmpq)
    if m == p
       N = -1
    else
-     N = -flog(m, p)
+     N = -remove(m, p)[1]
    end
    z = qadic(N + R.prec_max)
    ccall((:padic_poly_set_fmpq, :libflint), Nothing,
@@ -813,12 +829,16 @@ function (R::FlintQadicField)(n::fmpz_poly)
 end
 
 function (R::FlintQadicField)(n::fmpq_poly)
+
+   if degree(n) > degree(R) + 1
+       error("Polynomial degree larger than degree of qadic field.")
+   end
    m = denominator(n)
    p = prime(R)
    if m == p
       N = -1
    else
-     N = -flog(m, p)
+     N = -remove(m, p)[1]
    end
    z = qadic(N + R.prec_max)
    ccall((:padic_poly_set_fmpq_poly, :libflint), Nothing,

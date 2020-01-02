@@ -14,7 +14,7 @@ export fmpz_mod_rel_series, FmpzModRelSeriesRing
 
 function O(a::fmpz_mod_rel_series)
    val = pol_length(a) + valuation(a) - 1
-   val < 0 && throw(DomainError("Valuation must be non-negative: $val"))
+   val < 0 && throw(DomainError(val, "Valuation must be non-negative"))
    z = fmpz_mod_rel_series(modulus(a), Vector{fmpz}(undef, 0), 0, val, val)
    z.parent = parent(a)
    return z
@@ -107,6 +107,8 @@ function renormalize!(z::fmpz_mod_rel_series)
    end
    return nothing
 end
+
+characteristic(R::FmpzModRelSeriesRing) = modulus(R)
 
 ###############################################################################
 #
@@ -261,7 +263,7 @@ end
 #
 ###############################################################################
 
-function *(x::Generic.Res{fmpz}, y::fmpz_mod_rel_series)
+function *(x::fmpz_mod, y::fmpz_mod_rel_series)
    z = parent(y)()
    z.prec = y.prec
    z.val = y.val
@@ -272,7 +274,7 @@ function *(x::Generic.Res{fmpz}, y::fmpz_mod_rel_series)
    return z
 end
 
-*(x::fmpz_mod_rel_series, y::Generic.Res{fmpz}) = y * x
+*(x::fmpz_mod_rel_series, y::fmpz_mod) = y * x
 
 function *(x::fmpz, y::fmpz_mod_rel_series)
    z = parent(y)()
@@ -299,7 +301,7 @@ end
 ###############################################################################
 
 function shift_left(x::fmpz_mod_rel_series, len::Int)
-   len < 0 && throw(DomainError("Shift must be non-negative: $len"))
+   len < 0 && throw(DomainError(len, "Shift must be non-negative"))
    xlen = pol_length(x)
    z = fmpz_mod_rel_series(x)
    z.prec = x.prec + len
@@ -309,7 +311,7 @@ function shift_left(x::fmpz_mod_rel_series, len::Int)
 end
 
 function shift_right(x::fmpz_mod_rel_series, len::Int)
-   len < 0 && throw(DomainError("Shift must be non-negative: $len"))
+   len < 0 && throw(DomainError(len, "Shift must be non-negative"))
    xlen = pol_length(x)
    xval = valuation(x)
    z = parent(x)()
@@ -335,7 +337,7 @@ end
 ###############################################################################
 
 function truncate(x::fmpz_mod_rel_series, prec::Int)
-   prec < 0 && throw(DomainError("Index must be non-negative: $prec"))
+   prec < 0 && throw(DomainError(prec, "Index must be non-negative"))
    xlen = pol_length(x)
    xprec = precision(x)
    xval = valuation(x)
@@ -364,7 +366,7 @@ end
 ###############################################################################
 
 function ^(a::fmpz_mod_rel_series, b::Int)
-   b < 0 && throw(DomainError("Exponent must be non-negative: $b"))
+   b < 0 && throw(DomainError(b, "Exponent must be non-negative"))
    if isgen(a)
       z = parent(a)()
       z = setcoeff!(z, 0, fmpz(1))
@@ -436,7 +438,7 @@ end
 #
 ###############################################################################
 
-function ==(x::fmpz_mod_rel_series, y::Generic.Res{fmpz})
+function ==(x::fmpz_mod_rel_series, y::fmpz_mod)
    if precision(x) == 0
       return true
    elseif pol_length(x) > 1
@@ -456,7 +458,7 @@ function ==(x::fmpz_mod_rel_series, y::Generic.Res{fmpz})
    end
 end
 
-==(x::Generic.Res{fmpz}, y::fmpz_mod_rel_series) = y == x
+==(x::fmpz_mod, y::fmpz_mod_rel_series) = y == x
 
 function ==(x::fmpz_mod_rel_series, y::fmpz)
    if precision(x) == 0
@@ -522,7 +524,7 @@ end
 #
 ###############################################################################
 
-function divexact(x::fmpz_mod_rel_series, y::Generic.Res{fmpz})
+function divexact(x::fmpz_mod_rel_series, y::fmpz_mod)
    iszero(y) && throw(DivideError())
    z = parent(x)()
    z.prec = x.prec
@@ -629,7 +631,7 @@ function setcoeff!(z::fmpz_mod_rel_series, n::Int, x::fmpz)
    return z
 end
 
-function setcoeff!(z::fmpz_mod_rel_series, n::Int, x::Generic.Res{fmpz})
+function setcoeff!(z::fmpz_mod_rel_series, n::Int, x::fmpz_mod)
    ccall((:fmpz_mod_poly_set_coeff_fmpz, :libflint), Nothing,
                 (Ref{fmpz_mod_rel_series}, Int, Ref{fmpz}),
                z, n, x.data)
@@ -727,7 +729,7 @@ promote_rule(::Type{fmpz_mod_rel_series}, ::Type{T}) where {T <: Integer} = fmpz
 
 promote_rule(::Type{fmpz_mod_rel_series}, ::Type{fmpz}) = fmpz_mod_rel_series
 
-promote_rule(::Type{fmpz_mod_rel_series}, ::Type{Generic.Res{fmpz}}) = fmpz_mod_rel_series
+promote_rule(::Type{fmpz_mod_rel_series}, ::Type{fmpz_mod}) = fmpz_mod_rel_series
 
 ###############################################################################
 #
@@ -767,7 +769,7 @@ function (a::FmpzModRelSeriesRing)(b::fmpz)
    return z
 end
 
-function (a::FmpzModRelSeriesRing)(b::Generic.Res{fmpz})
+function (a::FmpzModRelSeriesRing)(b::fmpz_mod)
    if iszero(b)
       z = fmpz_mod_rel_series(modulus(a))
       z.prec = a.prec_max
@@ -790,7 +792,7 @@ function (a::FmpzModRelSeriesRing)(b::Array{fmpz, 1}, len::Int, prec::Int, val::
    return z
 end
 
-function (a::FmpzModRelSeriesRing)(b::Array{Generic.Res{fmpz}, 1}, len::Int, prec::Int, val::Int)
+function (a::FmpzModRelSeriesRing)(b::Array{fmpz_mod, 1}, len::Int, prec::Int, val::Int)
    z = fmpz_mod_rel_series(modulus(a), b, len, prec, val)
    z.parent = a
    return z

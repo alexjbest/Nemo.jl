@@ -90,6 +90,12 @@ function denominator(a::fmpq)
 end
 
 @doc Markdown.doc"""
+    sign(a::fmpq)
+> Return the sign of $a$ ($-1$, $0$ or $1$) as a fraction.
+"""
+sign(a::fmpq) = fmpq(sign(numerator(a)))
+
+@doc Markdown.doc"""
     abs(a::fmpq)
 > Return the absolute value of $a$.
 """
@@ -100,6 +106,9 @@ function abs(a::fmpq)
 end
 
 zero(a::FlintRationalField) = fmpq(0)
+
+# Exists only to support Julia functionality (no guarantees)
+zero(::Type{fmpq}) = fmpq(0)
 
 one(a::FlintRationalField) = fmpq(1)
 
@@ -137,6 +146,22 @@ function deepcopy_internal(a::fmpq, dict::IdDict)
    ccall((:fmpq_set, :libflint), Nothing, (Ref{fmpq}, Ref{fmpq}), z, a)
    return z
 end
+
+characteristic(::FlintRationalField) = 0
+
+@doc Markdown.doc"""
+    floor(a::fmpq)
+> Returns the greatest integer that is less than or equal to $a$. The result is
+> returned as a rational with denominator $1$.
+"""
+Base.floor(a::fmpq) = fmpq(fdiv(numerator(a), denominator(a)), 1)
+
+@doc Markdown.doc"""
+    ceil(a::fmpq)
+> Returns the least integer that is greater than or equal to $a$. The result is
+> returned as a rational with denominator $1$.
+"""
+Base.ceil(a::fmpq) = fmpq(cdiv(numerator(a), denominator(a)), 1)
 
 ###############################################################################
 #
@@ -370,6 +395,7 @@ isless(a::fmpq, b::Rational{T}) where {T <: Integer} = isless(a, fmpq(b))
 ###############################################################################
 
 function ^(a::fmpq, b::Int)
+   iszero(a) && b < 0 && throw(DivideError())
    temp = fmpq()
    ccall((:fmpq_pow_si, :libflint), Nothing,
          (Ref{fmpq}, Ref{fmpq}, Int), temp, a, b)
@@ -415,19 +441,23 @@ function Base.sqrt(a::fmpq)
     sden = sqrt(denominator(a))
     return fmpq(snum, sden)
  end
- 
- ###############################################################################
+
+###############################################################################
 #
 #   Inversion
 #
 ###############################################################################
 
+
 function inv(a::fmpq)
+    if iszero(a)
+       throw(error("Element not invertible"))
+    end
     z = fmpq()
     ccall((:fmpq_inv, :libflint), Nothing, (Ref{fmpq}, Ref{fmpq}), z, a)
     return z
  end
- 
+
  ###############################################################################
 #
 #   Exact division
@@ -435,6 +465,7 @@ function inv(a::fmpq)
 ###############################################################################
 
 function divexact(a::fmpq, b::fmpq)
+   iszero(b) && throw(DivideError())
    z = fmpq()
    ccall((:fmpq_div, :libflint), Nothing,
          (Ref{fmpq}, Ref{fmpq}, Ref{fmpq}), z, a, b)
@@ -444,7 +475,7 @@ end
 div(a::fmpq, b::fmpq) = divexact(a, b)
 
 function rem(a::fmpq, b::fmpq)
-   iszero(b) && throw("Divide by zero in rem")
+   iszero(b) && throw(DivideError())
    return fmpq(0)
 end
 
@@ -455,17 +486,24 @@ end
 ###############################################################################
 
 function divexact(a::fmpq, b::fmpz)
+   iszero(b) && throw(DivideError())
    z = fmpq()
    ccall((:fmpq_div_fmpz, :libflint), Nothing,
          (Ref{fmpq}, Ref{fmpq}, Ref{fmpz}), z, a, b)
    return z
 end
 
-divexact(a::fmpz, b::fmpq) = inv(b)*a
+function divexact(a::fmpz, b::fmpq)
+   iszero(b) && throw(DivideError())
+   return inv(b)*a
+end
 
 divexact(a::fmpq, b::Integer) = divexact(a, fmpz(b))
 
-divexact(a::Integer, b::fmpq) = inv(b)*a
+function divexact(a::Integer, b::fmpq)
+   iszero(b) && throw(DivideError())
+   return inv(b)*a
+end
 
 divexact(a::fmpq, b::Rational{T}) where {T <: Integer} = divexact(a, fmpq(b))
 
@@ -483,6 +521,7 @@ divexact(a::Rational{T}, b::fmpq) where {T <: Integer} = divexact(fmpq(a), b)
 > $a$.
 """
 function mod(a::fmpq, b::fmpz)
+   iszero(b) && throw(DivideError())
    z = fmpz()
    ccall((:fmpq_mod_fmpz, :libflint), Nothing,
          (Ref{fmpz}, Ref{fmpq}, Ref{fmpz}), z, a, b)
@@ -587,7 +626,7 @@ reconstruct(a::Integer, b::Integer) =  reconstruct(fmpz(a), fmpz(b))
 > Calkin-Wilf enumeration. If $a < 0$ we throw a `DomainError()`.
 """
 function next_minimal(a::fmpq)
-   a < 0 && throw(DomainError("Argument must be non-negative: $a"))
+   a < 0 && throw(DomainError(a, "Argument must be non-negative"))
    c = fmpq()
    ccall((:fmpq_next_minimal, :libflint), Nothing, (Ref{fmpq}, Ref{fmpq}), c, a)
    return c
@@ -621,7 +660,7 @@ end
 > being faster to produce than the minimal-height order.
 """
 function next_calkin_wilf(a::fmpq)
-   a < 0 && throw(DomainError("Argument must be non-negative: $a"))
+   a < 0 && throw(DomainError(a, "Argument must be non-negative"))
    c = fmpq()
    ccall((:fmpq_next_calkin_wilf, :libflint), Nothing,
          (Ref{fmpq}, Ref{fmpq}), c, a)
@@ -656,7 +695,7 @@ end
 > fit in a single limb. For larger $n$, a divide and conquer strategy is used.
 """
 function harmonic(n::Int)
-   n < 0 && throw(DomainError("Index must be non-negative: $n"))
+   n < 0 && throw(DomainError(n, "Index must be non-negative"))
    c = fmpq()
    ccall((:fmpq_harmonic_ui, :libflint), Nothing, (Ref{fmpq}, Int), c, n)
    return c
@@ -667,7 +706,7 @@ end
 > Computes the Bernoulli number $B_n$ for nonnegative $n$.
 """
 function bernoulli(n::Int)
-   n < 0 && throw(DomainError("Index must be non-negative: $n"))
+   n < 0 && throw(DomainError(n, "Index must be non-negative"))
    c = fmpq()
    ccall((:bernoulli_fmpq_ui, :libarb), Nothing, (Ref{fmpq}, Int), c, n)
    return c
@@ -682,7 +721,7 @@ end
 """
 function bernoulli_cache(n::Int)
    n = n + 1
-   n < 0 && throw(DomainError("Index must be non-negative: $n"))
+   n < 0 && throw(DomainError(n, "Index must be non-negative"))
    ccall((:bernoulli_cache_compute, :libarb), Nothing, (Int,), n)
 end
 
@@ -769,7 +808,14 @@ end
 
 (a::FlintRationalField)() = fmpq(fmpz(0), fmpz(1))
 
-(a::FlintRationalField)(b::Rational) = fmpq(numerator(b), denominator(b))
+function (a::FlintRationalField)(b::Rational)
+   # work around Julia bug, https://github.com/JuliaLang/julia/issues/32569
+   if denominator(b) < 0
+      return fmpq(fmpz(numerator(b)), -fmpz(denominator(b)))
+   else
+      return fmpq(numerator(b), denominator(b))
+   end
+end
 
 (a::FlintRationalField)(b::Integer) = fmpq(b)
 

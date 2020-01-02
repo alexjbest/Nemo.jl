@@ -4,28 +4,24 @@
 #
 ###############################################################################
 
-export zero, one, deepcopy, -, transpose, +, *, &, ==, !=, strongequal,
+export zero, one, deepcopy, -, transpose, +, *, &, ==, !=,
        overlaps, contains, inv, divexact, charpoly, det, lu, lu!, solve,
        solve!, solve_lu_precomp, solve_lu_precomp!, swap_rows, swap_rows!,
-       bound_inf_norm, isreal
+       bound_inf_norm, isreal, eigvals, eigvals_simple
 
 ###############################################################################
 #
-#   Similar
+#   Similar & zero
 #
 ###############################################################################
 
-function similar(x::acb_mat)
-   z = acb_mat(nrows(x), ncols(x))
-   z.base_ring = x.base_ring
-   return z
-end
-
-function similar(x::acb_mat, r::Int, c::Int)
+function similar(::acb_mat, R::AcbField, r::Int, c::Int)
    z = acb_mat(r, c)
-   z.base_ring = x.base_ring
+   z.base_ring = R
    return z
 end
+
+zero(m::acb_mat, R::AcbField, r::Int, c::Int) = similar(m, R, r, c)
 
 ###############################################################################
 #
@@ -39,6 +35,8 @@ elem_type(::Type{AcbMatSpace}) = acb_mat
 
 parent(x::acb_mat, cached::Bool = true) =
       MatrixSpace(base_ring(x), nrows(x), ncols(x))
+
+dense_matrix_type(::Type{acb}) = acb_mat
 
 prec(x::AcbMatSpace) = prec(x.base_ring)
 
@@ -128,39 +126,6 @@ function deepcopy_internal(x::acb_mat, dict::IdDict)
   z = similar(x)
   ccall((:acb_mat_set, :libarb), Nothing, (Ref{acb_mat}, Ref{acb_mat}), z, x)
   return z
-end
-
-################################################################################
-#
-#  String I/O
-#
-################################################################################
-
-function show(io::IO, a::AcbMatSpace)
-   print(io, "Matrix Space of ")
-   print(io, nrows(a), " rows and ", ncols(a), " columns over ")
-   print(io, base_ring(a))
-end
-
-function show(io::IO, a::acb_mat)
-   r = nrows(a)
-   c = ncols(a)
-   if r*c == 0
-     print(io, "$r by $c matrix")
-   end
-   for i = 1:r
-      print(io, "[")
-      for j = 1:c
-         print(io, a[i, j])
-         if j != c
-            print(io, " ")
-         end
-      end
-      print(io, "]")
-      if i != r
-         println(io, "")
-      end
-   end
 end
 
 ################################################################################
@@ -599,7 +564,7 @@ end
 #
 ###############################################################################
 
-function lu!(P::Generic.perm, x::acb_mat)
+function lu!(P::Generic.Perm, x::acb_mat)
   P.d .-= 1
   r = ccall((:acb_mat_lu, :libarb), Cint,
               (Ptr{Int}, Ref{acb_mat}, Ref{acb_mat}, Int),
@@ -610,7 +575,7 @@ function lu!(P::Generic.perm, x::acb_mat)
   return nrows(x)
 end
 
-function lu(P::Generic.perm, x::acb_mat)
+function lu(P::Generic.Perm, x::acb_mat)
   ncols(x) != nrows(x) && error("Matrix must be square")
   parent(P).n != nrows(x) && error("Permutation does not match matrix")
   R = base_ring(x)
@@ -649,7 +614,7 @@ function solve(x::acb_mat, y::acb_mat)
   return z
 end
 
-function solve_lu_precomp!(z::acb_mat, P::Generic.perm, LU::acb_mat, y::acb_mat)
+function solve_lu_precomp!(z::acb_mat, P::Generic.Perm, LU::acb_mat, y::acb_mat)
   Q = inv(P)
   ccall((:acb_mat_solve_lu_precomp, :libarb), Nothing,
               (Ref{acb_mat}, Ptr{Int}, Ref{acb_mat}, Ref{acb_mat}, Int),
@@ -657,7 +622,7 @@ function solve_lu_precomp!(z::acb_mat, P::Generic.perm, LU::acb_mat, y::acb_mat)
   nothing
 end
 
-function solve_lu_precomp(P::Generic.perm, LU::acb_mat, y::acb_mat)
+function solve_lu_precomp(P::Generic.Perm, LU::acb_mat, y::acb_mat)
   ncols(LU) != nrows(y) && error("Matrix dimensions are wrong")
   z = similar(y)
   solve_lu_precomp!(z, P, LU, y)
@@ -927,6 +892,127 @@ promote_rule(::Type{acb_mat}, ::Type{fmpz_mat}) = acb_mat
 promote_rule(::Type{acb_mat}, ::Type{fmpq_mat}) = acb_mat
 
 promote_rule(::Type{acb_mat}, ::Type{arb_mat}) = acb_mat
+
+###############################################################################
+#
+#   Eigenvalues and eigenvectors
+#
+###############################################################################
+
+function __approx_eig_qr!(v::Ptr{acb_struct}, R::acb_mat, A::acb_mat)
+  n = nrows(A)
+  ccall((:acb_mat_approx_eig_qr, :libarb), Cint,
+        (Ptr{acb_struct}, Ptr{Nothing}, Ref{acb_mat},
+        Ref{acb_mat}, Ptr{Nothing}, Int, Int),
+        v, C_NULL, R, A, C_NULL, 0, prec(parent(A)))
+  return nothing
+end
+
+function _approx_eig_qr(A::acb_mat)
+  n = nrows(A)
+  v = acb_vec(n)
+  R = zero_matrix(base_ring(A), ncols(A), nrows(A))
+  __approx_eig_qr!(v, R, A)
+  z = array(base_ring(A), v, n)
+  acb_vec_clear(v, n)
+  return z, R
+end
+
+function _eig_multiple(A::acb_mat, check::Bool = true)
+  n = nrows(A)
+  v = acb_vec(n)
+  v_approx = acb_vec(n)
+  R = zero_matrix(base_ring(A), n, n)
+  __approx_eig_qr!(v, R, A)
+  b = ccall((:acb_mat_eig_multiple, :libarb), Cint,
+            (Ptr{acb_struct}, Ref{acb_mat}, Ptr{acb_struct}, Ref{acb_mat}, Int),
+             v_approx, A, v, R, prec(base_ring(A)))
+  check && b == 0 && throw(error("Could not isolate eigenvalues of matrix $A"))
+  z = array(base_ring(A), v, n)
+  acb_vec_clear(v, n)
+  acb_vec_clear(v_approx, n)
+  res = Vector{Tuple{acb, Int}}()
+  k = 1
+  for i in 1:n
+    if i < n && isequal(z[i], z[i + 1])
+      k = k + 1
+      if i == n - 1
+        push!(res, (z[i], k))
+        break
+      end
+    else
+      push!(res, (z[i], k))
+      k = 1
+    end
+  end
+
+  return res, R
+end
+
+function _eig_simple(A::acb_mat; check::Bool = true, alg = :default)
+  n = nrows(A)
+  v = acb_vec(n)
+  v_approx = acb_vec(n)
+  Rapprox = zero_matrix(base_ring(A), n, n)
+  L = zero_matrix(base_ring(A), n, n)
+  R = zero_matrix(base_ring(A), n, n)
+  __approx_eig_qr!(v, Rapprox, A)
+  if alg == :vdhoeven_mourrain
+      b = ccall((:acb_mat_eig_simple_vdhoeven_mourrain, :libarb), Cint,
+                (Ptr{acb_struct}, Ref{acb_mat}, Ref{acb_mat},
+                 Ref{acb_mat}, Ptr{acb_struct}, Ref{acb_mat}, Int),
+                 v_approx, L, R, A, v, Rapprox, prec(base_ring(A)))
+  elseif alg == :rump
+      b = ccall((:acb_mat_eig_simple_rump, :libarb), Cint,
+                (Ptr{acb_struct}, Ref{acb_mat}, Ref{acb_mat},
+                 Ref{acb_mat}, Ptr{acb_struct}, Ref{acb_mat}, Int),
+                 v_approx, L, R, A, v, Rapprox, prec(base_ring(A)))
+  elseif alg == :default
+      b = ccall((:acb_mat_eig_simple, :libarb), Cint,
+                (Ptr{acb_struct}, Ref{acb_mat}, Ref{acb_mat},
+                 Ref{acb_mat}, Ptr{acb_struct}, Ref{acb_mat}, Int),
+                 v_approx, L, R, A, v, Rapprox, prec(base_ring(A)))
+  else
+      throw(error("Algorithm $alg not supported"))
+  end
+
+  check && b == 0 && throw(error("Could not isolate eigenvalues of matrix $A"))
+  z = array(base_ring(A), v, n)
+  acb_vec_clear(v, n)
+  acb_vec_clear(v_approx, n)
+
+  return z, L, R
+end
+
+@doc Markdown.doc"""
+    eigvals_simple(A::acb_mat, alg = :default)
+
+> Returns the eigenvalues of `A` as a vector of `acb`. It is assumed that `A`
+> has only simple eigenvalues.
+>
+> The algorithm used can be changed by setting the `alg` keyword to
+> `:vdhoeven_mourrain` or `:rump`.
+>
+> This function is experimental.
+"""
+function eigvals_simple(A::acb_mat, alg = :default)
+  E, _, _ = _eig_simple(A, alg = alg)
+  return E
+end
+
+@doc Markdown.doc"""
+    eigvals(A::acb_mat)
+
+> Returns the eigenvalues of `A` as a vector of tuples `(acb, Int)`.
+> Each tuple `(z, k)` corresponds to a cluser of `k` eigenvalues
+> of $A$.
+>
+> This function is experimental.
+"""
+function eigvals(A::acb_mat)
+  e, _ = _eig_multiple(A)
+  return e
+end
 
 ###############################################################################
 #

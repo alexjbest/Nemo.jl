@@ -14,11 +14,11 @@ export ball, radius, midpoint, contains, contains_zero,
        contains_nonpositive, convert, iszero,
        isnonzero, isexact, isint, ispositive, isfinite,
        isnonnegative, isnegative, isnonpositive, add!, mul!,
-       sub!, div!, strongequal, prec, overlaps, unique_integer,
+       sub!, div!, prec, overlaps, unique_integer,
        accuracy_bits, trim, ldexp, setunion, setintersection,
        const_pi, const_e, const_log2, const_log10, const_euler,
        const_catalan, const_khinchin, const_glaisher,
-       floor, ceil, hypot, rsqrt, sqrt1pm1, root,
+       floor, ceil, hypot, rsqrt, sqrt1pm1, sqrtpos, root,
        log, log1p, expm1, sin, cos, sinpi, cospi, tan, cot,
        tanpi, cotpi, sinh, cosh, tanh, coth, atan, asin, acos,
        atanh, asinh, acosh, gamma, lgamma, rgamma, digamma, zeta,
@@ -97,6 +97,8 @@ function check_parent(a::arb, b::arb)
    parent(a) != parent(b) &&
              error("Incompatible arb elements")
 end
+
+characteristic(::ArbField) = 0
 
 ################################################################################
 #
@@ -1105,6 +1107,18 @@ function sqrt1pm1(x::arb)
 end
 
 @doc Markdown.doc"""
+    sqrtpos(x::arb)
+> Return the sqrt root of $x$, assuming that $x$ represents a nonnegative
+> number. Thus any negative number in the input interval is discarded.
+"""
+function sqrtpos(x::arb)
+   z = parent(x)()
+   ccall((:arb_sqrtpos, :libarb), Nothing, (Ref{arb}, Ref{arb}, Int), z, x, parent(x).prec)
+   return z
+end
+
+
+@doc Markdown.doc"""
     log(x::arb)
 > Return the principal branch of the logarithm of $x$.
 """
@@ -1502,7 +1516,7 @@ end
 > Return the $n$-th root of $x$. We require $x \geq 0$.
 """
 function root(x::arb, n::Int)
-  x < 0 && throw(DomainError("Argument must be positive: $x"))
+  x < 0 && throw(DomainError(x, "Argument must be positive"))
   return root(x, UInt(n))
 end
 
@@ -1618,7 +1632,7 @@ end
     bernoulli(n::Int, r::ArbField)
 > Return the $n$-th Bernoulli number as an element of the given Arb field.
 """
-bernoulli(n::Int, r::ArbField) = n >= 0 ? bernoulli(UInt(n), r) : throw(DomainError("Index must be non-negative: $n"))
+bernoulli(n::Int, r::ArbField) = n >= 0 ? bernoulli(UInt(n), r) : throw(DomainError(n, "Index must be non-negative"))
 
 function risingfac(x::arb, n::UInt)
   z = parent(x)()
@@ -1631,7 +1645,7 @@ end
     risingfac(x::arb, n::Int)
 > Return the rising factorial $x(x + 1)\ldots (x + n - 1)$ as an Arb.
 """
-risingfac(x::arb, n::Int) = n < 0 ? throw(DomainError("Index must be non-negative: $n")) : risingfac(x, UInt(n))
+risingfac(x::arb, n::Int) = n < 0 ? throw(DomainError(n, "Index must be non-negative")) : risingfac(x, UInt(n))
 
 function risingfac(x::fmpq, n::UInt, r::ArbField)
   z = r()
@@ -1645,7 +1659,7 @@ end
 > Return the rising factorial $x(x + 1)\ldots (x + n - 1)$ as an element of the
 > given Arb field.
 """
-risingfac(x::fmpq, n::Int, r::ArbField) = n < 0 ? throw(DomainError("Index must be non-negative: $n")) : risingfac(x, UInt(n), r)
+risingfac(x::fmpq, n::Int, r::ArbField) = n < 0 ? throw(DomainError(n, "Index must be non-negative")) : risingfac(x, UInt(n), r)
 
 function risingfac2(x::arb, n::UInt)
   z = parent(x)()
@@ -1660,7 +1674,7 @@ end
 > Return a tuple containing the rising factorial $x(x + 1)\ldots (x + n - 1)$
 > and its derivative.
 """
-risingfac2(x::arb, n::Int) = n < 0 ? throw(DomainError("Index must be non-negative: $n")) : risingfac2(x, UInt(n))
+risingfac2(x::arb, n::Int) = n < 0 ? throw(DomainError(n, "Index must be non-negative")) : risingfac2(x, UInt(n))
 
 @doc Markdown.doc"""
     polylog(s::arb, a::arb)
@@ -1718,25 +1732,25 @@ end
     chebyshev_t(n::Int, x::arb)
 > Return the value of the Chebyshev polynomial $T_n(x)$.
 """
-chebyshev_t(n::Int, x::arb) = n < 0 ? throw(DomainError("Index must be non-negative: $n")) : chebyshev_t(UInt(n), x)
+chebyshev_t(n::Int, x::arb) = n < 0 ? throw(DomainError(n, "Index must be non-negative")) : chebyshev_t(UInt(n), x)
 
 @doc Markdown.doc"""
     chebyshev_u(n::Int, x::arb)
 > Return the value of the Chebyshev polynomial $U_n(x)$.
 """
-chebyshev_u(n::Int, x::arb) = n < 0 ? throw(DomainError("Index must be non-negative: $n")) : chebyshev_u(UInt(n), x)
+chebyshev_u(n::Int, x::arb) = n < 0 ? throw(DomainError(n, "Index must be non-negative")) : chebyshev_u(UInt(n), x)
 
 @doc Markdown.doc"""
     chebyshev_t2(n::Int, x::arb)
 > Return the tuple $(T_{n}(x), T_{n-1}(x))$.
 """
-chebyshev_t2(n::Int, x::arb) = n < 0 ? throw(DomainError("Index must be non-negative: $n")) : chebyshev_t2(UInt(n), x)
+chebyshev_t2(n::Int, x::arb) = n < 0 ? throw(DomainError(n, "Index must be non-negative")) : chebyshev_t2(UInt(n), x)
 
 @doc Markdown.doc"""
     chebyshev_u2(n::Int, x::arb)
 > Return the tuple $(U_{n}(x), U_{n-1}(x))$
 """
-chebyshev_u2(n::Int, x::arb) = n < 0 ? throw(DomainError("Index must be non-negative: $n")) : chebyshev_u2(UInt(n), x)
+chebyshev_u2(n::Int, x::arb) = n < 0 ? throw(DomainError(n, "Index must be non-negative")) : chebyshev_u2(UInt(n), x)
 
 @doc Markdown.doc"""
     bell(n::fmpz, r::ArbField)
@@ -1784,10 +1798,10 @@ numpart(n::Int, r::ArbField) = numpart(fmpz(n), r)
 > (using LLL). The entries are first scaled by the given number of bits before
 > truncating to integers for use in LLL. This function can be used to find linear
 > dependence between a list of real numbers. The algorithm is heuristic only and
-> returns an array of Nemo integers representing the linear combination.  
+> returns an array of Nemo integers representing the linear combination.
 """
 function lindep(A::Array{arb, 1}, bits::Int)
-  bits < 0 && throw(DomainError("Number of bits must be non-negative: $bits"))
+  bits < 0 && throw(DomainError(bits, "Number of bits must be non-negative"))
   n = length(A)
   V = [floor(ldexp(s, bits) + 0.5) for s in A]
   M = zero_matrix(ZZ, n, n + 1)
