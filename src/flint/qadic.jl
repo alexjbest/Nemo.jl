@@ -4,7 +4,7 @@
 #
 ###############################################################################
 
-export FlintQadicField, qadic, prime, teichmuller, log
+export FlintQadicField, qadic, prime, teichmuller, log, trace, norm, get_padic
 
 ###############################################################################
 #
@@ -637,6 +637,48 @@ function frobenius(a::qadic, e::Int = 1)
    return z
 end
 
+
+# TODO this looks broken? trace of an element of Qp should multiply by degree but doesn't for K(2)?
+@doc Markdown.doc"""
+    trace(a::qadic)
+> Return the Trace of the $q$-adic value $a$.
+"""
+function trace(a::qadic)
+   ctx = parent(a)
+   R = FlintPadicField(prime(ctx), ctx.prec_max)
+   z = R()
+   ccall((:qadic_trace, :libflint), Nothing,
+         (Ref{padic}, Ref{qadic}, Ref{FlintQadicField}), z, a, ctx)
+   return z
+end
+
+@doc Markdown.doc"""
+    norm(a::qadic)
+> Return the norm of the $q$-adic value $a$.
+"""
+function norm(a::qadic)
+   ctx = parent(a)
+   R = FlintPadicField(prime(ctx), ctx.prec_max)
+   z = R()
+   ccall((:qadic_norm, :libflint), Nothing,
+         (Ref{padic}, Ref{qadic}, Ref{FlintQadicField}), z, a, ctx)
+   return z
+end
+
+@doc Markdown.doc"""
+    get_padic(a::qadic)
+> Return the padic value if it is one
+"""
+function get_padic(a::qadic)
+   ctx = parent(a)
+   R = FlintPadicField(prime(ctx), ctx.prec_max)
+   z = R()
+   r = ccall((:qadic_get_padic, :libflint), Int,
+         (Ref{padic}, Ref{qadic}, Ref{FlintQadicField}), z, a, ctx)
+   r == 0 && error("qadic is not a padic")
+   return z
+end
+
 ###############################################################################
 #
 #   Unsafe operators
@@ -738,7 +780,7 @@ function (R::FlintQadicField)(n::fmpz)
       N, = remove(n, p)
    end
    z = qadic(N + R.prec_max)
-   ccall((:padic_poly_set_fmpz, :libflint), Nothing,
+   ccall((:qadic_set_fmpz, :libflint), Nothing,
          (Ref{qadic}, Ref{fmpz}, Ref{FlintQadicField}), z, n, R)
    z.parent = R
    return z

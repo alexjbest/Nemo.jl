@@ -43,6 +43,12 @@ function one(R::GaloisField)
    return gfp_elem(UInt(1), R)
 end
 
+function gen(R::GaloisField)
+   d = ccall((:n_primitive_root_prime, :libflint), UInt, (UInt,),
+             R.n)
+   return gfp_elem(d, R)
+end
+
 iszero(a::gfp_elem) = a.data == 0
 
 isone(a::gfp_elem) = a.data == 1
