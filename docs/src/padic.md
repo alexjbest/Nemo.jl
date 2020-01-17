@@ -35,7 +35,7 @@ P-adic fields in Nemo implement the AbstractAlgebra.jl field interface.
 
 [https://nemocas.github.io/AbstractAlgebra.jl/fields.html](https://nemocas.github.io/AbstractAlgebra.jl/fields.html)
 
-Below, we document all the additional function that is provide by Nemo for p-adic
+Below, we document all the additional functions that are provided by Nemo for p-adic
 fields.
 
 ### Constructors

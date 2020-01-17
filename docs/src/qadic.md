@@ -30,13 +30,13 @@ Flint    | $\mathbb{Q}_q$ | `qadic`        | `QadicField`
 All the $q$-adic field types belong to the `Field` abstract type and the
 $q$-adic field element types belong to the `FieldElem` abstract type.
 
-## P-adic functionality
+## Q-adic functionality
 
 Q-adic fields in Nemo implement the AbstractAlgebra.jl field interface.
 
 [https://nemocas.github.io/AbstractAlgebra.jl/fields.html](https://nemocas.github.io/AbstractAlgebra.jl/fields.html)
 
-Below, we document all the additional function that is provide by Nemo for p-adic
+Below, we document all the additional functions that are provided by Nemo for q-adic
 fields.
 
 ### Constructors
@@ -77,7 +77,7 @@ d = R(ZZ(1)//7^2)
 
 ### Big-oh notation
 
-Elements of p-adic fields can  be constructed using the big-oh notation. For this
+Elements of q-adic fields can  be constructed using the big-oh notation. For this
 purpose we define the following functions.
 
 ```@docs
