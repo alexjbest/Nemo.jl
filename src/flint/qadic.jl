@@ -847,9 +847,7 @@ function (R::FlintQadicField)(n::fmpq_poly)
    return z
 end
 
-function (R::FlintQadicField)(b::Rational{<:Integer})
-   return R(fmpq(b))
-end
+(R::FlintQadicField)(b::Rational{<:Integer}) = R(fmpq(b))
 
 (R::FlintQadicField)(n::Integer) = R(fmpz(n))
 

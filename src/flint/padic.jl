@@ -721,6 +721,7 @@ function (R::FlintPadicField)(n::fmpq)
    return z
 end
 
+(R::FlintPadicField)(b::Rational{<:Integer}) = R(fmpq(b))
 (R::FlintPadicField)(n::Integer) = R(fmpz(n))
 
 function (R::FlintPadicField)(n::padic)
